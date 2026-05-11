@@ -24,10 +24,12 @@ function timeAgo(ts) {
   return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 }
 
-function MessageCard({ message, staffId, onMarkRead }) {
+function MessageCard({ message, staffId, onMarkRead, onResolve }) {
   const [expanded, setExpanded] = useState(false)
   const [images, setImages]     = useState([])
-  const isUnread = !message.read_by?.includes(staffId)
+  const [resolving, setResolving] = useState(false)
+  const isUnread   = !message.read_by?.includes(staffId)
+  const isResolved = message.resolved === true
   const cfg = PRIORITY_CONFIG[message.priority] || PRIORITY_CONFIG.normal
 
   useEffect(() => {
@@ -45,21 +47,29 @@ function MessageCard({ message, staffId, onMarkRead }) {
     if (isUnread) onMarkRead(message.id)
   }
 
+  const handleResolve = async (e) => {
+    e.stopPropagation()
+    setResolving(true)
+    await onResolve(message.id)
+    setResolving(false)
+  }
+
+  if (isResolved) return null
+
   return (
     <div style={{
       background: cfg.bg, border: `1px solid ${cfg.border}`,
       borderRadius: 'var(--radius-md)', marginBottom: 10, overflow: 'hidden',
     }}>
+      {/* Header row */}
       <div onClick={handleToggle} style={{
         padding: '12px 14px', cursor: 'pointer',
         display: 'flex', gap: 10, alignItems: 'flex-start'
       }}>
-        {/* Priority dot */}
         <div style={{
           width: 8, height: 8, borderRadius: '50%', background: cfg.dot,
           flexShrink: 0, marginTop: 6
         }} />
-
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 14, color: cfg.color }}>{message.title}</span>
@@ -82,13 +92,13 @@ function MessageCard({ message, staffId, onMarkRead }) {
             <span style={{ fontSize: 11, color: 'var(--text-light)' }}>{timeAgo(message.created_at)}</span>
           </div>
         </div>
-
         <span style={{
           color: 'var(--text-light)', fontSize: 18, flexShrink: 0,
           transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s'
         }}>›</span>
       </div>
 
+      {/* Expanded body */}
       {expanded && (
         <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border)' }}>
           {message.body ? (
@@ -108,6 +118,19 @@ function MessageCard({ message, staffId, onMarkRead }) {
               ))}
             </div>
           )}
+          {/* Resolve button */}
+          <button
+            onClick={handleResolve}
+            disabled={resolving}
+            style={{
+              marginTop: 14, width: '100%', padding: '10px',
+              background: 'var(--success-bg)', color: 'var(--success)',
+              border: '1px solid rgba(61,170,110,0.3)', borderRadius: 'var(--radius-md)',
+              fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            {resolving ? 'Resolving…' : '✓ Mark as resolved'}
+          </button>
         </div>
       )}
     </div>
@@ -129,6 +152,7 @@ export default function Messages() {
       .from('messages')
       .select('*, staff:staff_id(first_name, last_name)')
       .eq('site_id', staff.site_id)
+      .eq('resolved', false)
       .order('created_at', { ascending: false })
       .limit(100)
     setMessages(data || [])
@@ -136,25 +160,29 @@ export default function Messages() {
   }
 
   const handleMarkRead = async (messageId) => {
-    // Optimistically update local state
     setMessages(prev => prev.map(m =>
-      m.id === messageId
-        ? { ...m, read_by: [...(m.read_by || []), staff.id] }
-        : m
+      m.id === messageId ? { ...m, read_by: [...(m.read_by || []), staff.id] } : m
     ))
-    // Fetch current read_by then append
     const { data: current } = await supabase
       .from('messages').select('read_by').eq('id', messageId).single()
     const updated = [...new Set([...(current?.read_by || []), staff.id])]
     await supabase.from('messages').update({ read_by: updated }).eq('id', messageId)
   }
 
+  const handleResolve = async (messageId) => {
+    await supabase.from('messages').update({
+      resolved: true,
+      resolved_by: staff.id,
+      resolved_at: new Date().toISOString(),
+    }).eq('id', messageId)
+    setMessages(prev => prev.filter(m => m.id !== messageId))
+  }
+
   const urgent = messages.filter(m => m.priority === 'urgent')
   const normal = messages.filter(m => m.priority === 'normal')
   const fyi    = messages.filter(m => m.priority === 'fyi')
 
-  const unreadUrgent = urgent.filter(m => !m.read_by?.includes(staff.id)).length
-
+  const unreadUrgent   = urgent.filter(m => !m.read_by?.includes(staff.id)).length
   const filteredNormal = filter === 'all' ? normal : normal.filter(m => m.type === filter)
 
   if (loading) return (
@@ -166,7 +194,6 @@ export default function Messages() {
   return (
     <div className="page-content">
 
-      {/* Urgent — always pinned at top */}
       {urgent.length > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -179,7 +206,8 @@ export default function Messages() {
             )}
           </div>
           {urgent.map(m => (
-            <MessageCard key={m.id} message={m} staffId={staff.id} onMarkRead={handleMarkRead} />
+            <MessageCard key={m.id} message={m} staffId={staff.id}
+              onMarkRead={handleMarkRead} onResolve={handleResolve} />
           ))}
         </div>
       )}
@@ -198,20 +226,19 @@ export default function Messages() {
         ))}
       </div>
 
-      {/* Normal feed */}
       <div className="section-heading">Day-to-day</div>
       {filteredNormal.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">💬</div>
-          <div className="empty-state-text">No messages yet.</div>
+          <div className="empty-state-text">No messages.</div>
         </div>
       ) : (
         filteredNormal.map(m => (
-          <MessageCard key={m.id} message={m} staffId={staff.id} onMarkRead={handleMarkRead} />
+          <MessageCard key={m.id} message={m} staffId={staff.id}
+            onMarkRead={handleMarkRead} onResolve={handleResolve} />
         ))
       )}
 
-      {/* FYI — collapsed by default */}
       {fyi.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <button onClick={() => setShowFyi(f => !f)} style={{
@@ -226,7 +253,8 @@ export default function Messages() {
             FYI ({fyi.length})
           </button>
           {showFyi && fyi.map(m => (
-            <MessageCard key={m.id} message={m} staffId={staff.id} onMarkRead={handleMarkRead} />
+            <MessageCard key={m.id} message={m} staffId={staff.id}
+              onMarkRead={handleMarkRead} onResolve={handleResolve} />
           ))}
         </div>
       )}
