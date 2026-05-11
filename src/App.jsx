@@ -24,11 +24,12 @@ const Icon = ({ name, size = 22 }) => {
     network:   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
     sites:     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
     logout:    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
+    compose:   <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="10" y1="10" x2="14" y2="10"/></svg>,
   }
   return icons[name] || null
 }
 
-function Header({ staff, onLogout }) {
+function Header({ staff, onLogout, onCompose, isFOH }) {
   const roleLabel = { trainee: 'Trainee', cleaner: 'Cleaner', foh: 'FOH', senior_foh: 'Sr. FOH', admin: 'Manager', hq: 'HQ' }
   const roleClass = { trainee: 'role-foh', cleaner: 'role-foh', foh: 'role-foh', senior_foh: 'role-foh', admin: 'role-admin', hq: 'role-hq' }
   return (
@@ -44,6 +45,12 @@ function Header({ staff, onLogout }) {
             <span className={`header-role ${roleClass[staff.role]}`}>{roleLabel[staff.role]}</span>
           </div>
         </div>
+        {isFOH && (
+          <button className="btn-icon" onClick={onCompose} aria-label="New message"
+            style={{ color: 'var(--aqua)' }}>
+            <Icon name="compose" size={20} />
+          </button>
+        )}
         <button className="btn-icon" onClick={onLogout} aria-label="Log out">
           <Icon name="logout" size={18} />
         </button>
@@ -135,7 +142,7 @@ export default function App() {
     }
     return (
       <div className="app-shell">
-        <Header staff={staff} onLogout={handleLogout} />
+        <Header staff={staff} onLogout={handleLogout} isFOH={false} />
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {renderTab()}
         </div>
@@ -147,38 +154,18 @@ export default function App() {
   // ── FOH view ───────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
-      <Header staff={staff} onLogout={handleLogout} />
+      <Header staff={staff} onLogout={handleLogout} onCompose={() => setComposing(true)} isFOH={true} />
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {selectedShift ? (
           <ShiftTasks
             shift={selectedShift}
             locationData={locationData}
             onBack={() => { setSelectedShift(null); setLocationData(null) }}
-            onCompose={() => setComposing(true)}
           />
         ) : (
-          <ShiftSelector
-            onSelectShift={handleShiftSelect}
-            onCompose={() => setComposing(true)}
-          />
+          <ShiftSelector onSelectShift={handleShiftSelect} />
         )}
       </div>
-
-      {/* Floating compose button — always visible in FOH view */}
-      <button
-        onClick={() => setComposing(true)}
-        aria-label="New message"
-        style={{
-          position: 'fixed', bottom: 28, right: 20,
-          width: 52, height: 52, borderRadius: '50%',
-          background: 'var(--aqua)', color: '#fff', border: 'none',
-          boxShadow: '0 4px 16px rgba(127,192,195,0.5)',
-          fontSize: 26, fontWeight: 300, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 100,
-        }}
-      >+</button>
-
       {composing && (
         <ComposeMessage onClose={() => setComposing(false)} />
       )}
