@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 
-export default function Dashboard({ onNavigate }) {
+export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
   const [stats, setStats] = useState({ completed: 0, flagged: 0, openIssues: 0, inProgress: 0 })
   const [recentIssues, setRecentIssues] = useState([])
   const [shiftSummary, setShiftSummary] = useState([])
+  const [urgentMessages, setUrgentMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const today = new Date().toISOString().split('T')[0]
 
@@ -23,12 +24,12 @@ export default function Dashboard({ onNavigate }) {
     const { data: compData } = await compQuery
 
     const completed = compData?.filter(c => c.status === 'completed').length || 0
-    const flagged = compData?.filter(c => c.status === 'flagged').length || 0
+    const flagged   = compData?.filter(c => c.status === 'flagged').length || 0
 
-    // Open issues — use explicit foreign key hints
+    // Open issues
     let issueQuery = supabase
       .from('issues')
-      .select(`*, reporter:staff_id(first_name), sites:site_id(name)`)
+      .select('*, reporter:staff_id(first_name), sites:site_id(name)')
       .in('status', ['open', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(8)
@@ -45,9 +46,22 @@ export default function Dashboard({ onNavigate }) {
         const name = c.shift_definitions?.name || 'Unknown'
         if (!shiftMap[name]) shiftMap[name] = { completed: 0, flagged: 0 }
         if (c.status === 'completed') shiftMap[name].completed++
-        if (c.status === 'flagged') shiftMap[name].flagged++
+        if (c.status === 'flagged')   shiftMap[name].flagged++
       })
     }
+
+    // Urgent unread messages
+    let msgQuery = supabase
+      .from('messages').select('id, title, created_at, read_by, staff:staff_id(first_name)')
+      .eq('priority', 'urgent')
+      .eq('site_id', staff.site_id)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    const { data: msgData } = await msgQuery
+
+    const unread = (msgData || []).filter(m => !m.read_by?.includes(staff.id))
+    setUrgentMessages(unread)
+    onUnreadUrgent?.(unread.length)
 
     setStats({ completed, flagged, openIssues, inProgress })
     setRecentIssues(issueData || [])
@@ -80,7 +94,31 @@ export default function Dashboard({ onNavigate }) {
         </div>
       </div>
 
-      {/* Stats — tapping issues navigates to Issues tab */}
+      {/* Urgent messages banner */}
+      {urgentMessages.length > 0 && (
+        <button onClick={() => onNavigate?.('messages')} style={{
+          width: '100%', textAlign: 'left', background: 'rgba(232,48,26,0.06)',
+          border: '1.5px solid rgba(232,48,26,0.25)', borderRadius: 'var(--radius-md)',
+          padding: '12px 14px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>🔴</span>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: '#E8301A' }}>
+                {urgentMessages.length} urgent message{urgentMessages.length > 1 ? 's' : ''} unread
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                {urgentMessages[0]?.title}
+                {urgentMessages.length > 1 && ` +${urgentMessages.length - 1} more`}
+              </div>
+            </div>
+          </div>
+          <span style={{ color: '#E8301A', fontSize: 18 }}>›</span>
+        </button>
+      )}
+
+      {/* Stats */}
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-number" style={{ color: 'var(--success)' }}>{stats.completed}</div>
@@ -90,29 +128,21 @@ export default function Dashboard({ onNavigate }) {
           <div className="stat-number" style={{ color: 'var(--danger)' }}>{stats.flagged}</div>
           <div className="stat-label">Flagged</div>
         </div>
-        <button
-          className="stat-card"
-          onClick={() => onNavigate?.('issues')}
-          style={{
-            cursor: stats.openIssues > 0 ? 'pointer' : 'default',
-            border: stats.openIssues > 0 ? '1.5px solid rgba(217,79,79,0.3)' : '1px solid var(--border)',
-            background: stats.openIssues > 0 ? 'var(--danger-bg)' : 'var(--white)',
-          }}
-        >
+        <button className="stat-card" onClick={() => onNavigate?.('issues')} style={{
+          cursor: stats.openIssues > 0 ? 'pointer' : 'default',
+          border: stats.openIssues > 0 ? '1.5px solid rgba(217,79,79,0.3)' : '1px solid var(--border)',
+          background: stats.openIssues > 0 ? 'var(--danger-bg)' : 'var(--white)',
+        }}>
           <div className="stat-number" style={{ color: stats.openIssues > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
             {stats.openIssues}
           </div>
           <div className="stat-label">Open</div>
         </button>
-        <button
-          className="stat-card"
-          onClick={() => onNavigate?.('issues')}
-          style={{
-            cursor: stats.inProgress > 0 ? 'pointer' : 'default',
-            border: stats.inProgress > 0 ? '1.5px solid rgba(232,144,26,0.3)' : '1px solid var(--border)',
-            background: stats.inProgress > 0 ? 'var(--warning-bg)' : 'var(--white)',
-          }}
-        >
+        <button className="stat-card" onClick={() => onNavigate?.('issues')} style={{
+          cursor: stats.inProgress > 0 ? 'pointer' : 'default',
+          border: stats.inProgress > 0 ? '1.5px solid rgba(232,144,26,0.3)' : '1px solid var(--border)',
+          background: stats.inProgress > 0 ? 'var(--warning-bg)' : 'var(--white)',
+        }}>
           <div className="stat-number" style={{ color: stats.inProgress > 0 ? 'var(--warning)' : 'var(--text-secondary)' }}>
             {stats.inProgress}
           </div>
@@ -130,7 +160,7 @@ export default function Dashboard({ onNavigate }) {
                 <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {data.completed > 0 && <span className="badge badge-completed">{data.completed} done</span>}
-                  {data.flagged > 0 && <span className="badge badge-flagged">{data.flagged} flagged</span>}
+                  {data.flagged > 0   && <span className="badge badge-flagged">{data.flagged} flagged</span>}
                 </div>
               </div>
             </div>
@@ -138,7 +168,7 @@ export default function Dashboard({ onNavigate }) {
         </div>
       )}
 
-      {/* Open issues — each row taps to Issues tab */}
+      {/* Open issues */}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div className="card-title" style={{ marginBottom: 0 }}>Open issues</div>
