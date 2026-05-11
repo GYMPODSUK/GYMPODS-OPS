@@ -1,7 +1,7 @@
 // src/pages/shared/ComposeMessage.jsx
 import React, { useState, useRef } from 'react'
-import { supabase } from '../../lib/supabase'
-import { useAuth } from '../../contexts/AuthContext'
+import { supabase } from '../../../lib/supabase'
+import { useAuth } from '../../../contexts/AuthContext'
 
 const TYPE_OPTIONS = [
   { value: 'handover',    label: '🔄 Handover note' },
