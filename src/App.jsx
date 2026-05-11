@@ -47,7 +47,7 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
         </div>
         {isFOH && (
           <button className="btn-icon" onClick={onCompose} aria-label="New message"
-            style={{ color: 'var(--aqua)' }}>
+            style={{ color: '#D8F789' }}>
             <Icon name="compose" size={20} />
           </button>
         )}
