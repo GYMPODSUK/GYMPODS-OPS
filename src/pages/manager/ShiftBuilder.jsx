@@ -12,7 +12,19 @@ const CAT_LABELS = {
   maintenance: 'Maintenance', opening_closing: 'Opening/Closing', other: 'Other'
 }
 
-const EMPTY_FORM = { name: '', start_time: '06:00', end_time: '14:00' }
+const ROLE_OPTIONS = [
+  { value: 'trainee',    label: 'Trainee' },
+  { value: 'cleaner',    label: 'Cleaner' },
+  { value: 'foh',        label: 'FOH' },
+  { value: 'senior_foh', label: 'Senior FOH' },
+]
+
+const EMPTY_FORM = {
+  name: '',
+  start_time: '06:00',
+  end_time: '14:00',
+  visible_to_roles: ['foh', 'senior_foh'],
+}
 
 function formatTime(t) {
   if (!t) return ''
@@ -23,6 +35,38 @@ function formatTime(t) {
   return `${display}:${m}${ampm}`
 }
 
+function RoleCheckboxes({ selected, onChange }) {
+  const toggle = (role) => {
+    const updated = selected.includes(role)
+      ? selected.filter(r => r !== role)
+      : [...selected, role]
+    onChange(updated)
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {ROLE_OPTIONS.map(r => {
+        const active = selected.includes(r.value)
+        return (
+          <button
+            key={r.value}
+            type="button"
+            onClick={() => toggle(r.value)}
+            style={{
+              padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', transition: 'all 0.15s',
+              background: active ? 'var(--navy)' : 'var(--off-white)',
+              color: active ? 'var(--white)' : 'var(--text-secondary)',
+              border: `1px solid ${active ? 'var(--navy)' : 'var(--border)'}`,
+            }}
+          >
+            {active ? '✓ ' : ''}{r.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function ShiftBuilder() {
   const { staff } = useAuth()
   const [shifts, setShifts]               = useState([])
@@ -31,7 +75,7 @@ export default function ShiftBuilder() {
   const [allTasks, setAllTasks]           = useState([])
   const [loading, setLoading]             = useState(true)
   const [showPicker, setShowPicker]       = useState(false)
-  const [shiftModal, setShiftModal]       = useState(null) // null | 'new' | shift object
+  const [shiftModal, setShiftModal]       = useState(null)
   const [formData, setFormData]           = useState(EMPTY_FORM)
   const [formSaving, setFormSaving]       = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
@@ -53,7 +97,6 @@ export default function ShiftBuilder() {
     setShifts(shiftData || [])
     setAllTasks(taskData || [])
     if (shiftData?.length) setSelectedShift(prev => {
-      // Keep selected shift if still exists, else pick first
       const still = shiftData.find(s => s.id === prev?.id)
       return still || shiftData[0]
     })
@@ -81,30 +124,41 @@ export default function ShiftBuilder() {
 
   const openEditShift = (shift, e) => {
     e.stopPropagation()
-    setFormData({ name: shift.name, start_time: shift.start_time, end_time: shift.end_time })
+    setFormData({
+      name:             shift.name,
+      start_time:       shift.start_time,
+      end_time:         shift.end_time,
+      visible_to_roles: shift.visible_to_roles || ['foh', 'senior_foh'],
+    })
     setShiftModal(shift)
   }
 
   const handleShiftSave = async () => {
     if (!formData.name.trim()) return
+    if (formData.visible_to_roles.length === 0) {
+      showToast('Select at least one role', 'error')
+      return
+    }
     setFormSaving(true)
     try {
       if (shiftModal === 'new') {
         const maxOrder = shifts.reduce((m, s) => Math.max(m, s.order_index), 0)
         const { error } = await supabase.from('shift_definitions').insert({
-          site_id:     staff.site_id,
-          name:        formData.name.trim(),
-          start_time:  formData.start_time,
-          end_time:    formData.end_time,
-          order_index: maxOrder + 1,
+          site_id:          staff.site_id,
+          name:             formData.name.trim(),
+          start_time:       formData.start_time,
+          end_time:         formData.end_time,
+          visible_to_roles: formData.visible_to_roles,
+          order_index:      maxOrder + 1,
         })
         if (error) throw error
         showToast('Shift created')
       } else {
         const { error } = await supabase.from('shift_definitions').update({
-          name:       formData.name.trim(),
-          start_time: formData.start_time,
-          end_time:   formData.end_time,
+          name:             formData.name.trim(),
+          start_time:       formData.start_time,
+          end_time:         formData.end_time,
+          visible_to_roles: formData.visible_to_roles,
         }).eq('id', shiftModal.id)
         if (error) throw error
         showToast('Shift updated')
@@ -121,7 +175,6 @@ export default function ShiftBuilder() {
 
   const handleShiftDelete = async (shift) => {
     try {
-      // Delete shift_tasks first, then the shift
       await supabase.from('shift_tasks').delete().eq('shift_id', shift.id)
       await supabase.from('shift_definitions').delete().eq('id', shift.id)
       showToast('Shift deleted')
@@ -163,14 +216,12 @@ export default function ShiftBuilder() {
     loadAssignedTasks(selectedShift.id)
   }
 
-  const assignedIds  = new Set(assignedTasks.map(t => t.task_id))
-  const unassigned   = allTasks.filter(t => !assignedIds.has(t.id))
+  const assignedIds        = new Set(assignedTasks.map(t => t.task_id))
+  const unassigned         = allTasks.filter(t => !assignedIds.has(t.id))
   const filteredUnassigned = searchQuery.trim()
     ? unassigned.filter(t => t.name.toLowerCase().includes(searchQuery.toLowerCase()))
     : unassigned
-
-  // Group unassigned by category for the picker
-  const groupedUnassigned = filteredUnassigned.reduce((acc, t) => {
+  const groupedUnassigned  = filteredUnassigned.reduce((acc, t) => {
     if (!acc[t.category]) acc[t.category] = []
     acc[t.category].push(t)
     return acc
@@ -219,21 +270,16 @@ export default function ShiftBuilder() {
                 border: `1px solid ${selectedShift?.id === shift.id ? 'var(--navy)' : 'var(--border)'}`,
               }}>
                 {shift.name}
-                <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 4 }}>
+                <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>
                   {formatTime(shift.start_time)}–{formatTime(shift.end_time)}
                 </span>
               </button>
-              {/* Edit button on each tab */}
-              <button
-                onClick={(e) => openEditShift(shift, e)}
-                style={{
-                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
-                  color: selectedShift?.id === shift.id ? 'rgba(255,255,255,0.7)' : 'var(--text-light)',
-                  padding: '2px 4px', lineHeight: 1,
-                }}
-                title="Edit shift"
-              >✎</button>
+              <button onClick={(e) => openEditShift(shift, e)} style={{
+                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+                color: selectedShift?.id === shift.id ? 'rgba(255,255,255,0.7)' : 'var(--text-light)',
+                padding: '2px 4px', lineHeight: 1,
+              }} title="Edit shift">✎</button>
             </div>
           ))}
         </div>
@@ -248,6 +294,23 @@ export default function ShiftBuilder() {
           </div>
         ) : (
           <>
+            {/* Role visibility badges */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 600 }}>Visible to:</span>
+              {(selectedShift.visible_to_roles || []).map(role => (
+                <span key={role} style={{
+                  fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                  background: 'var(--aqua-light)', color: 'var(--navy)',
+                }}>
+                  {ROLE_OPTIONS.find(r => r.value === role)?.label || role}
+                </span>
+              ))}
+              <button onClick={(e) => openEditShift(selectedShift, e)} style={{
+                fontSize: 11, color: 'var(--aqua)', fontWeight: 600,
+                background: 'none', border: 'none', cursor: 'pointer', padding: 0
+              }}>Edit ›</button>
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
                 {assignedTasks.length} task{assignedTasks.length !== 1 ? 's' : ''} in {selectedShift.name}
@@ -315,22 +378,37 @@ export default function ShiftBuilder() {
             <div className="form-group">
               <label className="form-label">Shift name <span style={{ color: 'var(--danger)' }}>*</span></label>
               <input className="form-input" placeholder="e.g. Early Morning, Evening Clean…"
-                value={formData.name} onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} />
+                value={formData.name}
+                onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div className="form-group">
                 <label className="form-label">Start time</label>
-                <input type="time" className="form-input"
-                  value={formData.start_time}
+                <input type="time" className="form-input" value={formData.start_time}
                   onChange={e => setFormData(f => ({ ...f, start_time: e.target.value }))} />
               </div>
               <div className="form-group">
                 <label className="form-label">End time</label>
-                <input type="time" className="form-input"
-                  value={formData.end_time}
+                <input type="time" className="form-input" value={formData.end_time}
                   onChange={e => setFormData(f => ({ ...f, end_time: e.target.value }))} />
               </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Visible to <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Tap to select which roles can see this shift
+              </div>
+              <RoleCheckboxes
+                selected={formData.visible_to_roles}
+                onChange={roles => setFormData(f => ({ ...f, visible_to_roles: roles }))}
+              />
+              {formData.visible_to_roles.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>
+                  At least one role must be selected
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
@@ -338,22 +416,19 @@ export default function ShiftBuilder() {
                 Cancel
               </button>
               <button className="btn btn-primary" onClick={handleShiftSave}
-                disabled={formSaving || !formData.name.trim()} style={{ flex: 2 }}>
+                disabled={formSaving || !formData.name.trim() || formData.visible_to_roles.length === 0}
+                style={{ flex: 2 }}>
                 {formSaving ? 'Saving…' : shiftModal === 'new' ? 'Create shift' : 'Save changes'}
               </button>
             </div>
 
-            {/* Delete — only for existing shifts */}
             {shiftModal !== 'new' && (
-              <button
-                onClick={() => setDeleteConfirm(shiftModal)}
-                style={{
-                  marginTop: 16, width: '100%', padding: '10px',
-                  background: 'none', color: 'var(--danger)',
-                  border: '1px solid rgba(217,79,79,0.3)', borderRadius: 'var(--radius-md)',
-                  fontWeight: 600, fontSize: 13, cursor: 'pointer',
-                }}
-              >
+              <button onClick={() => setDeleteConfirm(shiftModal)} style={{
+                marginTop: 16, width: '100%', padding: '10px',
+                background: 'none', color: 'var(--danger)',
+                border: '1px solid rgba(217,79,79,0.3)', borderRadius: 'var(--radius-md)',
+                fontWeight: 600, fontSize: 13, cursor: 'pointer',
+              }}>
                 Delete this shift
               </button>
             )}
@@ -368,7 +443,7 @@ export default function ShiftBuilder() {
             <div className="modal-handle" />
             <div className="modal-title">Delete {deleteConfirm.name}?</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.5 }}>
-              This will permanently remove the shift and all its task assignments. Task completions already logged will not be affected.
+              This will permanently remove the shift and all its task assignments. Completion logs already recorded will not be affected.
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn btn-outline btn-sm" onClick={() => setDeleteConfirm(null)} style={{ flex: 1 }}>
@@ -388,16 +463,9 @@ export default function ShiftBuilder() {
           <div className="modal-sheet" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-handle" />
             <div className="modal-title">Add task to {selectedShift?.name}</div>
-
-            {/* Search */}
-            <input
-              className="form-input"
-              placeholder="Search tasks…"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{ marginBottom: 12 }}
-            />
-
+            <input className="form-input" placeholder="Search tasks…"
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              style={{ marginBottom: 12 }} />
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {filteredUnassigned.length === 0 ? (
                 <div className="empty-state">
@@ -415,7 +483,8 @@ export default function ShiftBuilder() {
                       {CAT_LABELS[category] || category}
                     </div>
                     {tasks.map(task => (
-                      <button key={task.id} onClick={() => { addTask(task); setShowPicker(false); setSearchQuery('') }}
+                      <button key={task.id}
+                        onClick={() => { addTask(task); setShowPicker(false); setSearchQuery('') }}
                         style={{
                           display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--white)',
                           border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
@@ -438,11 +507,8 @@ export default function ShiftBuilder() {
                 ))
               )}
             </div>
-
             <button className="btn btn-outline" onClick={() => { setShowPicker(false); setSearchQuery('') }}
-              style={{ marginTop: 12, flexShrink: 0 }}>
-              Done
-            </button>
+              style={{ marginTop: 12, flexShrink: 0 }}>Done</button>
           </div>
         </div>
       )}
