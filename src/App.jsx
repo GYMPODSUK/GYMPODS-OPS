@@ -36,7 +36,7 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
     <div className="header">
       <div className="header-logo">
         <div className="header-brand">GYMPODS</div>
-        <div className="header-site">{staff.sites?.name || 'OPS'}</div>
+        <div className="header-site">{staff.sites?.name || 'OPERATIONS'}</div>
       </div>
       <div className="header-user">
         <div>
