@@ -8,6 +8,8 @@ const SHIFT_ICONS = {
   'Morning Clean': '🧹', 'Evening Clean': '🧹',
 }
 
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+
 function getDistanceMetres(lat1, lon1, lat2, lon2) {
   const R = 6371000
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -20,17 +22,18 @@ function getDistanceMetres(lat1, lon1, lat2, lon2) {
 
 export default function ShiftSelector({ onSelectShift }) {
   const { staff } = useAuth()
-  const [shifts, setShifts]               = useState([])
-  const [completions, setCompletions]     = useState({})
-  const [taskCounts, setTaskCounts]       = useState({})
-  const [loading, setLoading]             = useState(true)
-  const [siteData, setSiteData]           = useState(null)
+  const [shifts, setShifts]                 = useState([])
+  const [completions, setCompletions]       = useState({})
+  const [taskCounts, setTaskCounts]         = useState({})
+  const [loading, setLoading]               = useState(true)
+  const [siteData, setSiteData]             = useState(null)
   const [locationStatus, setLocationStatus] = useState('checking')
-  const [userLocation, setUserLocation]   = useState(null)
-  const [distance, setDistance]           = useState(null)
+  const [userLocation, setUserLocation]     = useState(null)
+  const [distance, setDistance]             = useState(null)
 
-  const today     = new Date().toISOString().split('T')[0]
-  const isWeekend = [0, 6].includes(new Date().getDay())
+  const today      = new Date().toISOString().split('T')[0]
+  const todayKey   = DAY_KEYS[new Date().getDay()] // 'mon', 'tue', etc.
+  const isWeekend  = [0, 6].includes(new Date().getDay())
 
   const greeting = () => {
     const h = new Date().getHours()
@@ -49,23 +52,19 @@ export default function ShiftSelector({ onSelectShift }) {
       .from('sites').select('*').eq('id', staff.site_id).single()
     setSiteData(site)
 
-    // Load all shifts for this site
     const { data: allShifts } = await supabase
       .from('shift_definitions').select('*')
       .eq('site_id', staff.site_id).order('order_index')
 
-    // Filter by:
-    // 1. visible_to_roles includes this staff member's role (or no visible_to_roles set = show all)
-    // 2. day_type if the column exists
+    // Filter by role AND day of week
     const relevantShifts = (allShifts || []).filter(s => {
-      // Role filter — if visible_to_roles is set and non-empty, check membership
+      // Role filter
       if (s.visible_to_roles && s.visible_to_roles.length > 0) {
         if (!s.visible_to_roles.includes(staff.role)) return false
       }
-      // Day type filter (only if column exists on the record)
-      if (s.day_type) {
-        if (s.day_type === 'weekday' && isWeekend) return false
-        if (s.day_type === 'weekend' && !isWeekend) return false
+      // Day of week filter
+      if (s.days_of_week && s.days_of_week.length > 0) {
+        if (!s.days_of_week.includes(todayKey)) return false
       }
       return true
     })
@@ -145,7 +144,7 @@ export default function ShiftSelector({ onSelectShift }) {
         </div>
       </div>
 
-      {/* Location banner */}
+      {/* Location banners */}
       {locationStatus === 'on-site' && (
         <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(61,170,110,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>📍</span>
@@ -158,9 +157,7 @@ export default function ShiftSelector({ onSelectShift }) {
         <div style={{ background: 'var(--warning-bg)', border: '1px solid rgba(232,144,26,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⚠️</span>
-            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>
-              Not on site · {distance}m away
-            </span>
+            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>Not on site · {distance}m away</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 4, marginLeft: 24 }}>
             You can still complete tasks but your location will be logged.
@@ -173,7 +170,7 @@ export default function ShiftSelector({ onSelectShift }) {
       {shifts.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
-          <div className="empty-state-text">No shifts available for your role today.<br/>Contact your manager.</div>
+          <div className="empty-state-text">No shifts scheduled for today.<br/>Contact your manager.</div>
         </div>
       ) : (
         shifts.map(shift => {
