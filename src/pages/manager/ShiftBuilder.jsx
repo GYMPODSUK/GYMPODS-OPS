@@ -32,11 +32,8 @@ const DAY_OPTIONS = [
 const ALL_DAYS = DAY_OPTIONS.map(d => d.value)
 
 const EMPTY_FORM = {
-  name:             '',
-  start_time:       '06:00',
-  end_time:         '14:00',
-  visible_to_roles: ['foh', 'senior_foh'],
-  days_of_week:     ALL_DAYS,
+  name: '', start_time: '06:00', end_time: '14:00',
+  visible_to_roles: ['foh', 'senior_foh'], days_of_week: ALL_DAYS,
 }
 
 function formatTime(t) {
@@ -90,6 +87,7 @@ export default function ShiftBuilder() {
   const [formData, setFormData]           = useState(EMPTY_FORM)
   const [formSaving, setFormSaving]       = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [duplicating, setDuplicating]     = useState(false)
   const [toast, setToast]                 = useState(null)
   const [searchQuery, setSearchQuery]     = useState('')
 
@@ -128,10 +126,7 @@ export default function ShiftBuilder() {
 
   // ── Reorder ─────────────────────────────────────────────────────────────
 
-  const openReorder = () => {
-    setReorderList([...shifts])
-    setShowReorder(true)
-  }
+  const openReorder = () => { setReorderList([...shifts]); setShowReorder(true) }
 
   const moveShift = (idx, dir) => {
     const list = [...reorderList]
@@ -161,10 +156,7 @@ export default function ShiftBuilder() {
 
   // ── Shift CRUD ──────────────────────────────────────────────────────────
 
-  const openNewShift = () => {
-    setFormData(EMPTY_FORM)
-    setShiftModal('new')
-  }
+  const openNewShift = () => { setFormData(EMPTY_FORM); setShiftModal('new') }
 
   const openEditShift = (shift, e) => {
     e?.stopPropagation()
@@ -178,6 +170,19 @@ export default function ShiftBuilder() {
     setShiftModal(shift)
   }
 
+  const openDuplicateShift = (shift, e) => {
+    e?.stopPropagation()
+    setFormData({
+      name:             `Copy of ${shift.name}`,
+      start_time:       shift.start_time,
+      end_time:         shift.end_time,
+      visible_to_roles: shift.visible_to_roles || ['foh', 'senior_foh'],
+      days_of_week:     shift.days_of_week || ALL_DAYS,
+    })
+    setDuplicating(shift) // store original so we can copy its tasks
+    setShiftModal('new')
+  }
+
   const handleShiftSave = async () => {
     if (!formData.name.trim()) return
     if (formData.visible_to_roles.length === 0) { showToast('Select at least one role', 'error'); return }
@@ -186,17 +191,39 @@ export default function ShiftBuilder() {
     try {
       if (shiftModal === 'new') {
         const maxOrder = shifts.reduce((m, s) => Math.max(m, s.order_index), 0)
-        const { error } = await supabase.from('shift_definitions').insert({
-          site_id:          staff.site_id,
-          name:             formData.name.trim(),
-          start_time:       formData.start_time,
-          end_time:         formData.end_time,
-          visible_to_roles: formData.visible_to_roles,
-          days_of_week:     formData.days_of_week,
-          order_index:      maxOrder + 1,
-        })
+        const { data: newShift, error } = await supabase
+          .from('shift_definitions')
+          .insert({
+            site_id:          staff.site_id,
+            name:             formData.name.trim(),
+            start_time:       formData.start_time,
+            end_time:         formData.end_time,
+            visible_to_roles: formData.visible_to_roles,
+            days_of_week:     formData.days_of_week,
+            order_index:      maxOrder + 1,
+          })
+          .select().single()
         if (error) throw error
-        showToast('Shift created')
+
+        // If duplicating, copy all tasks from original shift
+        if (duplicating) {
+          const { data: sourceTasks } = await supabase
+            .from('shift_tasks').select('task_id, order_index')
+            .eq('shift_id', duplicating.id).order('order_index')
+          if (sourceTasks?.length) {
+            await supabase.from('shift_tasks').insert(
+              sourceTasks.map(t => ({
+                shift_id:    newShift.id,
+                task_id:     t.task_id,
+                order_index: t.order_index,
+              }))
+            )
+          }
+          showToast(`Shift duplicated with ${sourceTasks?.length || 0} tasks`)
+          setDuplicating(false)
+        } else {
+          showToast('Shift created')
+        }
       } else {
         const { error } = await supabase.from('shift_definitions').update({
           name:             formData.name.trim(),
@@ -271,7 +298,6 @@ export default function ShiftBuilder() {
     return acc
   }, {})
 
-  // Day summary for display under shift tab
   const daysSummary = (days) => {
     if (!days || days.length === 7) return 'Every day'
     if (JSON.stringify([...days].sort()) === JSON.stringify(['fri','mon','thu','tue','wed'])) return 'Weekdays'
@@ -353,9 +379,9 @@ export default function ShiftBuilder() {
             {/* Shift meta */}
             <div style={{
               background: 'var(--surface)', borderRadius: 'var(--radius-md)',
-              padding: '10px 14px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6
+              padding: '10px 14px', marginBottom: 12,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
                   🕐 {formatTime(selectedShift.start_time)} – {formatTime(selectedShift.end_time)}
                 </span>
@@ -378,6 +404,11 @@ export default function ShiftBuilder() {
                   fontSize: 11, color: 'var(--aqua)', fontWeight: 600,
                   background: 'none', border: 'none', cursor: 'pointer', padding: 0
                 }}>Edit ›</button>
+                <button onClick={(e) => openDuplicateShift(selectedShift, e)} style={{
+                  fontSize: 11, color: 'var(--navy)', fontWeight: 600,
+                  background: 'var(--aqua-light)', border: 'none', cursor: 'pointer',
+                  padding: '2px 8px', borderRadius: 10,
+                }}>⧉ Duplicate shift</button>
               </div>
             </div>
 
@@ -494,12 +525,24 @@ export default function ShiftBuilder() {
           <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-handle" />
             <div className="modal-title">
-              {shiftModal === 'new' ? 'New shift' : `Edit — ${shiftModal.name}`}
+              {shiftModal === 'new'
+                ? duplicating ? `Duplicate — ${duplicating.name}` : 'New shift'
+                : `Edit — ${shiftModal.name}`}
             </div>
+
+            {duplicating && (
+              <div style={{
+                fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12,
+                padding: '8px 12px', background: 'var(--aqua-light)',
+                borderRadius: 'var(--radius-sm)', lineHeight: 1.4
+              }}>
+                ⧉ Duplicating all {assignedTasks.length} tasks from {duplicating.name}. Edit the details below then save.
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Shift name <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <input className="form-input" placeholder="e.g. Saturday Morning, Evening Clean…"
+              <input className="form-input" placeholder="e.g. Thursday Morning, Saturday Clean…"
                 value={formData.name}
                 onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} />
             </div>
@@ -522,7 +565,6 @@ export default function ShiftBuilder() {
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
                 Which days should this shift appear?
               </div>
-              {/* Quick presets */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                 {[
                   { label: 'Every day', days: ALL_DAYS },
@@ -543,11 +585,8 @@ export default function ShiftBuilder() {
                   </button>
                 ))}
               </div>
-              <ToggleGroup
-                options={DAY_OPTIONS}
-                selected={formData.days_of_week}
-                onChange={days => setFormData(f => ({ ...f, days_of_week: days }))}
-              />
+              <ToggleGroup options={DAY_OPTIONS} selected={formData.days_of_week}
+                onChange={days => setFormData(f => ({ ...f, days_of_week: days }))} />
               {formData.days_of_week.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>
                   At least one day must be selected
@@ -560,11 +599,8 @@ export default function ShiftBuilder() {
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
                 Which roles can see this shift?
               </div>
-              <ToggleGroup
-                options={ROLE_OPTIONS}
-                selected={formData.visible_to_roles}
-                onChange={roles => setFormData(f => ({ ...f, visible_to_roles: roles }))}
-              />
+              <ToggleGroup options={ROLE_OPTIONS} selected={formData.visible_to_roles}
+                onChange={roles => setFormData(f => ({ ...f, visible_to_roles: roles }))} />
               {formData.visible_to_roles.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>
                   At least one role must be selected
@@ -573,11 +609,16 @@ export default function ShiftBuilder() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => setShiftModal(null)} style={{ flex: 1 }}>Cancel</button>
+              <button className="btn btn-outline btn-sm"
+                onClick={() => { setShiftModal(null); setDuplicating(false) }} style={{ flex: 1 }}>
+                Cancel
+              </button>
               <button className="btn btn-primary" onClick={handleShiftSave}
                 disabled={formSaving || !formData.name.trim() || formData.visible_to_roles.length === 0 || formData.days_of_week.length === 0}
                 style={{ flex: 2 }}>
-                {formSaving ? 'Saving…' : shiftModal === 'new' ? 'Create shift' : 'Save changes'}
+                {formSaving ? 'Saving…' : shiftModal === 'new'
+                  ? duplicating ? 'Create duplicate' : 'Create shift'
+                  : 'Save changes'}
               </button>
             </div>
 
