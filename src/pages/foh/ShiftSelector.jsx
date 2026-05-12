@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext'
 const SHIFT_ICONS = {
   'Early Morning': '🌅', 'Mid Shift': '☀️', 'Evening': '🌆', 'Overnight': '🌙',
   'Weekend Morning': '🌤️', 'Weekend Afternoon': '🌞', 'Weekend Overnight': '🌙',
+  'Morning Clean': '🧹', 'Evening Clean': '🧹',
 }
 
 function getDistanceMetres(lat1, lon1, lat2, lon2) {
@@ -19,16 +20,16 @@ function getDistanceMetres(lat1, lon1, lat2, lon2) {
 
 export default function ShiftSelector({ onSelectShift }) {
   const { staff } = useAuth()
-  const [shifts, setShifts] = useState([])
-  const [completions, setCompletions] = useState({})
-  const [taskCounts, setTaskCounts] = useState({})
-  const [loading, setLoading] = useState(true)
-  const [siteData, setSiteData] = useState(null)
+  const [shifts, setShifts]               = useState([])
+  const [completions, setCompletions]     = useState({})
+  const [taskCounts, setTaskCounts]       = useState({})
+  const [loading, setLoading]             = useState(true)
+  const [siteData, setSiteData]           = useState(null)
   const [locationStatus, setLocationStatus] = useState('checking')
-  const [userLocation, setUserLocation] = useState(null)
-  const [distance, setDistance] = useState(null)
+  const [userLocation, setUserLocation]   = useState(null)
+  const [distance, setDistance]           = useState(null)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today     = new Date().toISOString().split('T')[0]
   const isWeekend = [0, 6].includes(new Date().getDay())
 
   const greeting = () => {
@@ -44,20 +45,31 @@ export default function ShiftSelector({ onSelectShift }) {
   const loadData = async () => {
     setLoading(true)
 
-    const { data: site } = await supabase.from('sites').select('*').eq('id', staff.site_id).single()
+    const { data: site } = await supabase
+      .from('sites').select('*').eq('id', staff.site_id).single()
     setSiteData(site)
 
-    // Load all shifts for site, filter by day type
+    // Load all shifts for this site
     const { data: allShifts } = await supabase
       .from('shift_definitions').select('*')
       .eq('site_id', staff.site_id).order('order_index')
 
-    // Show shifts relevant to today (weekday vs weekend) + 'all' day shifts
-    const relevantShifts = (allShifts || []).filter(s =>
-      s.day_type === 'all' ||
-      (isWeekend && s.day_type === 'weekend') ||
-      (!isWeekend && s.day_type === 'weekday')
-    )
+    // Filter by:
+    // 1. visible_to_roles includes this staff member's role (or no visible_to_roles set = show all)
+    // 2. day_type if the column exists
+    const relevantShifts = (allShifts || []).filter(s => {
+      // Role filter — if visible_to_roles is set and non-empty, check membership
+      if (s.visible_to_roles && s.visible_to_roles.length > 0) {
+        if (!s.visible_to_roles.includes(staff.role)) return false
+      }
+      // Day type filter (only if column exists on the record)
+      if (s.day_type) {
+        if (s.day_type === 'weekday' && isWeekend) return false
+        if (s.day_type === 'weekend' && !isWeekend) return false
+      }
+      return true
+    })
+
     setShifts(relevantShifts)
 
     // Today's completions
@@ -107,8 +119,8 @@ export default function ShiftSelector({ onSelectShift }) {
 
   const handleShiftSelect = (shift) => {
     onSelectShift(shift, {
-      onSite: locationStatus === 'on-site' || locationStatus === 'no-coords',
-      latitude: userLocation?.latitude || null,
+      onSite:    locationStatus === 'on-site' || locationStatus === 'no-coords',
+      latitude:  userLocation?.latitude  || null,
       longitude: userLocation?.longitude || null,
     })
   }
@@ -121,6 +133,7 @@ export default function ShiftSelector({ onSelectShift }) {
 
   return (
     <div className="page-content">
+
       {/* Greeting */}
       <div style={{ background: 'var(--navy)', borderRadius: 'var(--radius-lg)', padding: '18px' }}>
         <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--aqua)' }}>
@@ -136,14 +149,18 @@ export default function ShiftSelector({ onSelectShift }) {
       {locationStatus === 'on-site' && (
         <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(61,170,110,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>📍</span>
-          <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>On site · {distance}m from {siteData?.name}</span>
+          <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+            On site · {distance}m from {siteData?.name}
+          </span>
         </div>
       )}
       {locationStatus === 'off-site' && (
         <div style={{ background: 'var(--warning-bg)', border: '1px solid rgba(232,144,26,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⚠️</span>
-            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>Not on site · {distance}m away</span>
+            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>
+              Not on site · {distance}m away
+            </span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 4, marginLeft: 24 }}>
             You can still complete tasks but your location will be logged.
@@ -156,18 +173,21 @@ export default function ShiftSelector({ onSelectShift }) {
       {shifts.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
-          <div className="empty-state-text">No shifts configured for today.<br/>Contact your manager.</div>
+          <div className="empty-state-text">No shifts available for your role today.<br/>Contact your manager.</div>
         </div>
       ) : (
         shifts.map(shift => {
-          const done = completions[shift.id] || 0
-          const total = taskCounts[shift.id] || 0
-          const pct = total > 0 ? Math.round((done / total) * 100) : 0
+          const done  = completions[shift.id] || 0
+          const total = taskCounts[shift.id]  || 0
+          const pct   = total > 0 ? Math.round((done / total) * 100) : 0
           return (
             <button key={shift.id} className="shift-card" onClick={() => handleShiftSelect(shift)}
               style={{ width: '100%', textAlign: 'left' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1 }}>
-                <div style={{ width: 48, height: 48, background: 'var(--aqua-light)', borderRadius: 'var(--radius-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>
+                <div style={{
+                  width: 48, height: 48, background: 'var(--aqua-light)', borderRadius: 'var(--radius-md)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0
+                }}>
                   {SHIFT_ICONS[shift.name] || '🕐'}
                 </div>
                 <div style={{ flex: 1 }}>
