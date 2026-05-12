@@ -61,7 +61,7 @@ export default function Login() {
           GYMPODS
         </div>
         <div style={{ fontSize: '12px', fontWeight: '700', color: 'rgba(127,192,195,0.5)', letterSpacing: '4px', marginTop: '4px' }}>
-          OPS
+          OPERATIONS
         </div>
       </div>
 
