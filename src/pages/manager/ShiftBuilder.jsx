@@ -47,18 +47,13 @@ function RoleCheckboxes({ selected, onChange }) {
       {ROLE_OPTIONS.map(r => {
         const active = selected.includes(r.value)
         return (
-          <button
-            key={r.value}
-            type="button"
-            onClick={() => toggle(r.value)}
-            style={{
-              padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-              cursor: 'pointer', transition: 'all 0.15s',
-              background: active ? 'var(--navy)' : 'var(--off-white)',
-              color: active ? 'var(--white)' : 'var(--text-secondary)',
-              border: `1px solid ${active ? 'var(--navy)' : 'var(--border)'}`,
-            }}
-          >
+          <button key={r.value} type="button" onClick={() => toggle(r.value)} style={{
+            padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', transition: 'all 0.15s',
+            background: active ? 'var(--navy)' : 'var(--off-white)',
+            color: active ? 'var(--white)' : 'var(--text-secondary)',
+            border: `1px solid ${active ? 'var(--navy)' : 'var(--border)'}`,
+          }}>
             {active ? '✓ ' : ''}{r.label}
           </button>
         )
@@ -75,6 +70,9 @@ export default function ShiftBuilder() {
   const [allTasks, setAllTasks]           = useState([])
   const [loading, setLoading]             = useState(true)
   const [showPicker, setShowPicker]       = useState(false)
+  const [showReorder, setShowReorder]     = useState(false)
+  const [reorderList, setReorderList]     = useState([])
+  const [reorderSaving, setReorderSaving] = useState(false)
   const [shiftModal, setShiftModal]       = useState(null)
   const [formData, setFormData]           = useState(EMPTY_FORM)
   const [formSaving, setFormSaving]       = useState(false)
@@ -115,6 +113,42 @@ export default function ShiftBuilder() {
     setTimeout(() => setToast(null), 2200)
   }
 
+  // ── Reorder shifts ──────────────────────────────────────────────────────
+
+  const openReorder = () => {
+    setReorderList([...shifts])
+    setShowReorder(true)
+  }
+
+  const moveShift = (idx, dir) => {
+    const list = [...reorderList]
+    const target = idx + dir
+    if (target < 0 || target >= list.length) return
+    ;[list[idx], list[target]] = [list[target], list[idx]]
+    setReorderList(list)
+  }
+
+  const saveReorder = async () => {
+    setReorderSaving(true)
+    try {
+      await Promise.all(
+        reorderList.map((shift, idx) =>
+          supabase.from('shift_definitions')
+            .update({ order_index: idx + 1 })
+            .eq('id', shift.id)
+        )
+      )
+      showToast('Order saved')
+      setShowReorder(false)
+      await loadData()
+    } catch (err) {
+      console.error(err)
+      showToast('Could not save order', 'error')
+    } finally {
+      setReorderSaving(false)
+    }
+  }
+
   // ── Shift CRUD ──────────────────────────────────────────────────────────
 
   const openNewShift = () => {
@@ -123,7 +157,7 @@ export default function ShiftBuilder() {
   }
 
   const openEditShift = (shift, e) => {
-    e.stopPropagation()
+    e?.stopPropagation()
     setFormData({
       name:             shift.name,
       start_time:       shift.start_time,
@@ -248,9 +282,16 @@ export default function ShiftBuilder() {
               Manage shifts and assign tasks
             </div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={openNewShift} style={{ width: 'auto' }}>
-            + New shift
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {shifts.length > 1 && (
+              <button className="btn btn-outline btn-sm" onClick={openReorder} style={{ width: 'auto' }}>
+                ↕ Reorder
+              </button>
+            )}
+            <button className="btn btn-primary btn-sm" onClick={openNewShift} style={{ width: 'auto' }}>
+              + New shift
+            </button>
+          </div>
         </div>
 
         {/* Shift tabs */}
@@ -294,7 +335,6 @@ export default function ShiftBuilder() {
           </div>
         ) : (
           <>
-            {/* Role visibility badges */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 600 }}>Visible to:</span>
               {(selectedShift.visible_to_roles || []).map(role => (
@@ -315,8 +355,7 @@ export default function ShiftBuilder() {
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
                 {assignedTasks.length} task{assignedTasks.length !== 1 ? 's' : ''} in {selectedShift.name}
               </div>
-              <button className="btn btn-primary btn-sm"
-                onClick={() => setShowPicker(true)} style={{ width: 'auto' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowPicker(true)} style={{ width: 'auto' }}>
                 + Add task
               </button>
             </div>
@@ -365,6 +404,65 @@ export default function ShiftBuilder() {
           </>
         )}
       </div>
+
+      {/* ── Reorder shifts modal ── */}
+      {showReorder && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowReorder(false)}>
+          <div className="modal-sheet" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-handle" />
+            <div className="modal-title">Reorder shifts</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+              Use the arrows to set the display order.
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {reorderList.map((shift, idx) => (
+                <div key={shift.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  background: 'var(--white)', border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-md)', padding: '12px 14px', marginBottom: 8
+                }}>
+                  {/* Order number */}
+                  <div style={{
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: 'var(--aqua-light)', color: 'var(--navy)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0
+                  }}>{idx + 1}</div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{shift.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {formatTime(shift.start_time)} – {formatTime(shift.end_time)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                    <button onClick={() => moveShift(idx, -1)} disabled={idx === 0} style={{
+                      background: 'none', border: 'none', fontSize: 16, lineHeight: 1,
+                      color: idx === 0 ? 'var(--border)' : 'var(--navy)',
+                      cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 6px'
+                    }}>▲</button>
+                    <button onClick={() => moveShift(idx, 1)} disabled={idx === reorderList.length - 1} style={{
+                      background: 'none', border: 'none', fontSize: 16, lineHeight: 1,
+                      color: idx === reorderList.length - 1 ? 'var(--border)' : 'var(--navy)',
+                      cursor: idx === reorderList.length - 1 ? 'default' : 'pointer', padding: '2px 6px'
+                    }}>▼</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 12, flexShrink: 0 }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setShowReorder(false)} style={{ flex: 1 }}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={saveReorder}
+                disabled={reorderSaving} style={{ flex: 2 }}>
+                {reorderSaving ? 'Saving…' : 'Save order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── New / Edit shift modal ── */}
       {shiftModal !== null && (
