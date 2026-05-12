@@ -19,11 +19,24 @@ const ROLE_OPTIONS = [
   { value: 'senior_foh', label: 'Senior FOH' },
 ]
 
+const DAY_OPTIONS = [
+  { value: 'mon', label: 'Mon' },
+  { value: 'tue', label: 'Tue' },
+  { value: 'wed', label: 'Wed' },
+  { value: 'thu', label: 'Thu' },
+  { value: 'fri', label: 'Fri' },
+  { value: 'sat', label: 'Sat' },
+  { value: 'sun', label: 'Sun' },
+]
+
+const ALL_DAYS = DAY_OPTIONS.map(d => d.value)
+
 const EMPTY_FORM = {
-  name: '',
-  start_time: '06:00',
-  end_time: '14:00',
+  name:             '',
+  start_time:       '06:00',
+  end_time:         '14:00',
   visible_to_roles: ['foh', 'senior_foh'],
+  days_of_week:     ALL_DAYS,
 }
 
 function formatTime(t) {
@@ -35,26 +48,26 @@ function formatTime(t) {
   return `${display}:${m}${ampm}`
 }
 
-function RoleCheckboxes({ selected, onChange }) {
-  const toggle = (role) => {
-    const updated = selected.includes(role)
-      ? selected.filter(r => r !== role)
-      : [...selected, role]
+function ToggleGroup({ options, selected, onChange }) {
+  const toggle = (val) => {
+    const updated = selected.includes(val)
+      ? selected.filter(v => v !== val)
+      : [...selected, val]
     onChange(updated)
   }
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-      {ROLE_OPTIONS.map(r => {
-        const active = selected.includes(r.value)
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {options.map(o => {
+        const active = selected.includes(o.value)
         return (
-          <button key={r.value} type="button" onClick={() => toggle(r.value)} style={{
-            padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+          <button key={o.value} type="button" onClick={() => toggle(o.value)} style={{
+            padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
             cursor: 'pointer', transition: 'all 0.15s',
             background: active ? 'var(--navy)' : 'var(--off-white)',
             color: active ? 'var(--white)' : 'var(--text-secondary)',
             border: `1px solid ${active ? 'var(--navy)' : 'var(--border)'}`,
           }}>
-            {active ? '✓ ' : ''}{r.label}
+            {active ? '✓ ' : ''}{o.label}
           </button>
         )
       })}
@@ -113,7 +126,7 @@ export default function ShiftBuilder() {
     setTimeout(() => setToast(null), 2200)
   }
 
-  // ── Reorder shifts ──────────────────────────────────────────────────────
+  // ── Reorder ─────────────────────────────────────────────────────────────
 
   const openReorder = () => {
     setReorderList([...shifts])
@@ -133,16 +146,13 @@ export default function ShiftBuilder() {
     try {
       await Promise.all(
         reorderList.map((shift, idx) =>
-          supabase.from('shift_definitions')
-            .update({ order_index: idx + 1 })
-            .eq('id', shift.id)
+          supabase.from('shift_definitions').update({ order_index: idx + 1 }).eq('id', shift.id)
         )
       )
       showToast('Order saved')
       setShowReorder(false)
       await loadData()
     } catch (err) {
-      console.error(err)
       showToast('Could not save order', 'error')
     } finally {
       setReorderSaving(false)
@@ -163,16 +173,15 @@ export default function ShiftBuilder() {
       start_time:       shift.start_time,
       end_time:         shift.end_time,
       visible_to_roles: shift.visible_to_roles || ['foh', 'senior_foh'],
+      days_of_week:     shift.days_of_week || ALL_DAYS,
     })
     setShiftModal(shift)
   }
 
   const handleShiftSave = async () => {
     if (!formData.name.trim()) return
-    if (formData.visible_to_roles.length === 0) {
-      showToast('Select at least one role', 'error')
-      return
-    }
+    if (formData.visible_to_roles.length === 0) { showToast('Select at least one role', 'error'); return }
+    if (formData.days_of_week.length === 0) { showToast('Select at least one day', 'error'); return }
     setFormSaving(true)
     try {
       if (shiftModal === 'new') {
@@ -183,6 +192,7 @@ export default function ShiftBuilder() {
           start_time:       formData.start_time,
           end_time:         formData.end_time,
           visible_to_roles: formData.visible_to_roles,
+          days_of_week:     formData.days_of_week,
           order_index:      maxOrder + 1,
         })
         if (error) throw error
@@ -193,6 +203,7 @@ export default function ShiftBuilder() {
           start_time:       formData.start_time,
           end_time:         formData.end_time,
           visible_to_roles: formData.visible_to_roles,
+          days_of_week:     formData.days_of_week,
         }).eq('id', shiftModal.id)
         if (error) throw error
         showToast('Shift updated')
@@ -217,7 +228,6 @@ export default function ShiftBuilder() {
       setSelectedShift(null)
       await loadData()
     } catch (err) {
-      console.error(err)
       showToast('Could not delete shift', 'error')
     }
   }
@@ -260,6 +270,14 @@ export default function ShiftBuilder() {
     acc[t.category].push(t)
     return acc
   }, {})
+
+  // Day summary for display under shift tab
+  const daysSummary = (days) => {
+    if (!days || days.length === 7) return 'Every day'
+    if (JSON.stringify([...days].sort()) === JSON.stringify(['fri','mon','thu','tue','wed'])) return 'Weekdays'
+    if (JSON.stringify([...days].sort()) === JSON.stringify(['sat','sun'])) return 'Weekends'
+    return days.map(d => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')
+  }
 
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -311,9 +329,6 @@ export default function ShiftBuilder() {
                 border: `1px solid ${selectedShift?.id === shift.id ? 'var(--navy)' : 'var(--border)'}`,
               }}>
                 {shift.name}
-                <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 4 }}>
-                  {formatTime(shift.start_time)}–{formatTime(shift.end_time)}
-                </span>
               </button>
               <button onClick={(e) => openEditShift(shift, e)} style={{
                 position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
@@ -335,25 +350,40 @@ export default function ShiftBuilder() {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 600 }}>Visible to:</span>
-              {(selectedShift.visible_to_roles || []).map(role => (
-                <span key={role} style={{
-                  fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
-                  background: 'var(--aqua-light)', color: 'var(--navy)',
-                }}>
-                  {ROLE_OPTIONS.find(r => r.value === role)?.label || role}
+            {/* Shift meta */}
+            <div style={{
+              background: 'var(--surface)', borderRadius: 'var(--radius-md)',
+              padding: '10px 14px', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 6
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  🕐 {formatTime(selectedShift.start_time)} – {formatTime(selectedShift.end_time)}
                 </span>
-              ))}
-              <button onClick={(e) => openEditShift(selectedShift, e)} style={{
-                fontSize: 11, color: 'var(--aqua)', fontWeight: 600,
-                background: 'none', border: 'none', cursor: 'pointer', padding: 0
-              }}>Edit ›</button>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>·</span>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  📅 {daysSummary(selectedShift.days_of_week)}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 600 }}>Visible to:</span>
+                {(selectedShift.visible_to_roles || []).map(role => (
+                  <span key={role} style={{
+                    fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                    background: 'var(--aqua-light)', color: 'var(--navy)',
+                  }}>
+                    {ROLE_OPTIONS.find(r => r.value === role)?.label || role}
+                  </span>
+                ))}
+                <button onClick={(e) => openEditShift(selectedShift, e)} style={{
+                  fontSize: 11, color: 'var(--aqua)', fontWeight: 600,
+                  background: 'none', border: 'none', cursor: 'pointer', padding: 0
+                }}>Edit ›</button>
+              </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                {assignedTasks.length} task{assignedTasks.length !== 1 ? 's' : ''} in {selectedShift.name}
+                {assignedTasks.length} task{assignedTasks.length !== 1 ? 's' : ''}
               </div>
               <button className="btn btn-primary btn-sm" onClick={() => setShowPicker(true)} style={{ width: 'auto' }}>
                 + Add task
@@ -405,7 +435,7 @@ export default function ShiftBuilder() {
         )}
       </div>
 
-      {/* ── Reorder shifts modal ── */}
+      {/* ── Reorder modal ── */}
       {showReorder && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowReorder(false)}>
           <div className="modal-sheet" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
@@ -421,21 +451,18 @@ export default function ShiftBuilder() {
                   background: 'var(--white)', border: '1px solid var(--border)',
                   borderRadius: 'var(--radius-md)', padding: '12px 14px', marginBottom: 8
                 }}>
-                  {/* Order number */}
                   <div style={{
                     width: 24, height: 24, borderRadius: '50%',
                     background: 'var(--aqua-light)', color: 'var(--navy)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, fontWeight: 700, flexShrink: 0
                   }}>{idx + 1}</div>
-
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{shift.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
-                      {formatTime(shift.start_time)} – {formatTime(shift.end_time)}
+                      {formatTime(shift.start_time)} – {formatTime(shift.end_time)} · {daysSummary(shift.days_of_week)}
                     </div>
                   </div>
-
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
                     <button onClick={() => moveShift(idx, -1)} disabled={idx === 0} style={{
                       background: 'none', border: 'none', fontSize: 16, lineHeight: 1,
@@ -452,11 +479,8 @@ export default function ShiftBuilder() {
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 12, flexShrink: 0 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => setShowReorder(false)} style={{ flex: 1 }}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={saveReorder}
-                disabled={reorderSaving} style={{ flex: 2 }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setShowReorder(false)} style={{ flex: 1 }}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveReorder} disabled={reorderSaving} style={{ flex: 2 }}>
                 {reorderSaving ? 'Saving…' : 'Save order'}
               </button>
             </div>
@@ -467,7 +491,7 @@ export default function ShiftBuilder() {
       {/* ── New / Edit shift modal ── */}
       {shiftModal !== null && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShiftModal(null)}>
-          <div className="modal-sheet">
+          <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="modal-handle" />
             <div className="modal-title">
               {shiftModal === 'new' ? 'New shift' : `Edit — ${shiftModal.name}`}
@@ -475,7 +499,7 @@ export default function ShiftBuilder() {
 
             <div className="form-group">
               <label className="form-label">Shift name <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <input className="form-input" placeholder="e.g. Early Morning, Evening Clean…"
+              <input className="form-input" placeholder="e.g. Saturday Morning, Evening Clean…"
                 value={formData.name}
                 onChange={e => setFormData(f => ({ ...f, name: e.target.value }))} />
             </div>
@@ -494,11 +518,50 @@ export default function ShiftBuilder() {
             </div>
 
             <div className="form-group">
+              <label className="form-label">Days <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Which days should this shift appear?
+              </div>
+              {/* Quick presets */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                {[
+                  { label: 'Every day', days: ALL_DAYS },
+                  { label: 'Weekdays',  days: ['mon','tue','wed','thu','fri'] },
+                  { label: 'Weekends',  days: ['sat','sun'] },
+                ].map(preset => (
+                  <button key={preset.label} type="button"
+                    onClick={() => setFormData(f => ({ ...f, days_of_week: preset.days }))}
+                    style={{
+                      padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                      cursor: 'pointer', border: '1px solid var(--border)',
+                      background: JSON.stringify([...formData.days_of_week].sort()) === JSON.stringify([...preset.days].sort())
+                        ? 'var(--aqua)' : 'var(--off-white)',
+                      color: JSON.stringify([...formData.days_of_week].sort()) === JSON.stringify([...preset.days].sort())
+                        ? '#fff' : 'var(--text-secondary)',
+                    }}>
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <ToggleGroup
+                options={DAY_OPTIONS}
+                selected={formData.days_of_week}
+                onChange={days => setFormData(f => ({ ...f, days_of_week: days }))}
+              />
+              {formData.days_of_week.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>
+                  At least one day must be selected
+                </div>
+              )}
+            </div>
+
+            <div className="form-group">
               <label className="form-label">Visible to <span style={{ color: 'var(--danger)' }}>*</span></label>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                Tap to select which roles can see this shift
+                Which roles can see this shift?
               </div>
-              <RoleCheckboxes
+              <ToggleGroup
+                options={ROLE_OPTIONS}
                 selected={formData.visible_to_roles}
                 onChange={roles => setFormData(f => ({ ...f, visible_to_roles: roles }))}
               />
@@ -510,11 +573,9 @@ export default function ShiftBuilder() {
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => setShiftModal(null)} style={{ flex: 1 }}>
-                Cancel
-              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => setShiftModal(null)} style={{ flex: 1 }}>Cancel</button>
               <button className="btn btn-primary" onClick={handleShiftSave}
-                disabled={formSaving || !formData.name.trim() || formData.visible_to_roles.length === 0}
+                disabled={formSaving || !formData.name.trim() || formData.visible_to_roles.length === 0 || formData.days_of_week.length === 0}
                 style={{ flex: 2 }}>
                 {formSaving ? 'Saving…' : shiftModal === 'new' ? 'Create shift' : 'Save changes'}
               </button>
@@ -526,9 +587,7 @@ export default function ShiftBuilder() {
                 background: 'none', color: 'var(--danger)',
                 border: '1px solid rgba(217,79,79,0.3)', borderRadius: 'var(--radius-md)',
                 fontWeight: 600, fontSize: 13, cursor: 'pointer',
-              }}>
-                Delete this shift
-              </button>
+              }}>Delete this shift</button>
             )}
           </div>
         </div>
@@ -544,12 +603,8 @@ export default function ShiftBuilder() {
               This will permanently remove the shift and all its task assignments. Completion logs already recorded will not be affected.
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn btn-outline btn-sm" onClick={() => setDeleteConfirm(null)} style={{ flex: 1 }}>
-                Cancel
-              </button>
-              <button className="btn btn-danger" onClick={() => handleShiftDelete(deleteConfirm)} style={{ flex: 2 }}>
-                Yes, delete
-              </button>
+              <button className="btn btn-outline btn-sm" onClick={() => setDeleteConfirm(null)} style={{ flex: 1 }}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => handleShiftDelete(deleteConfirm)} style={{ flex: 2 }}>Yes, delete</button>
             </div>
           </div>
         </div>
