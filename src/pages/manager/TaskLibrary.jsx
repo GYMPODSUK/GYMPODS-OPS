@@ -21,10 +21,10 @@ const FREQUENCIES = [
 ]
 
 const SCHEDULE_TYPES = [
-  { value: 'any',                   label: 'Any day' },
-  { value: 'specific_weekday',      label: 'Specific day of week' },
-  { value: 'first_weekday_of_month',label: 'First weekday of month' },
-  { value: 'specific_date',         label: 'Specific date of month' },
+  { value: 'any',                    label: 'Any day' },
+  { value: 'specific_weekday',       label: 'Specific day of week' },
+  { value: 'first_weekday_of_month', label: 'First weekday of month' },
+  { value: 'specific_date',          label: 'Specific date of month' },
 ]
 
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
@@ -36,25 +36,22 @@ const ROLES = [
   { value: 'admin',      label: 'Admin only' },
 ]
 
-const FREQ_COLORS = {
-  session: '#7FC0C3', daily: '#2A8A8E', weekly: '#5A4A9A',
-  fortnightly: '#7A4A9A', monthly: '#C07010', quarterly: '#C04010', yearly: '#8A2020'
+const EMPTY_FORM = {
+  name: '', description: '', category: 'cleaning', frequency: 'session',
+  schedule_type: 'any', schedule_value: '', assigned_role: ''
 }
 
 export default function TaskLibrary() {
   const { staff, isAdmin } = useAuth()
-  const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filterCat, setFilterCat] = useState('all')
+  const [tasks, setTasks]       = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [filterCat, setFilterCat]   = useState('all')
   const [filterFreq, setFilterFreq] = useState('all')
   const [showForm, setShowForm] = useState(false)
-  const [editing, setEditing] = useState(null)
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState(null)
-  const [form, setForm] = useState({
-    name: '', description: '', category: 'cleaning', frequency: 'session',
-    schedule_type: 'any', schedule_value: '', assigned_role: ''
-  })
+  const [editing, setEditing]   = useState(null)
+  const [saving, setSaving]     = useState(false)
+  const [toast, setToast]       = useState(null)
+  const [form, setForm]         = useState(EMPTY_FORM)
 
   useEffect(() => { loadData() }, [])
 
@@ -76,7 +73,7 @@ export default function TaskLibrary() {
   const openAdd = () => {
     if (!isAdmin()) return
     setEditing(null)
-    setForm({ name: '', description: '', category: 'cleaning', frequency: 'session', schedule_type: 'any', schedule_value: '', assigned_role: '' })
+    setForm(EMPTY_FORM)
     setShowForm(true)
   }
 
@@ -84,11 +81,28 @@ export default function TaskLibrary() {
     if (!isAdmin()) return
     setEditing(task)
     setForm({
-      name: task.name, description: task.description || '',
-      category: task.category, frequency: task.frequency || 'session',
-      schedule_type: task.schedule_type || 'any',
+      name:           task.name,
+      description:    task.description || '',
+      category:       task.category,
+      frequency:      task.frequency || 'session',
+      schedule_type:  task.schedule_type || 'any',
       schedule_value: task.schedule_value || '',
-      assigned_role: task.assigned_role || ''
+      assigned_role:  task.assigned_role || '',
+    })
+    setShowForm(true)
+  }
+
+  const openDuplicate = (task) => {
+    if (!isAdmin()) return
+    setEditing(null) // null = new task
+    setForm({
+      name:           `Copy of ${task.name}`,
+      description:    task.description || '',
+      category:       task.category,
+      frequency:      task.frequency || 'session',
+      schedule_type:  task.schedule_type || 'any',
+      schedule_value: task.schedule_value || '',
+      assigned_role:  task.assigned_role || '',
     })
     setShowForm(true)
   }
@@ -98,13 +112,13 @@ export default function TaskLibrary() {
     setSaving(true)
     try {
       const payload = {
-        name: form.name.trim(),
-        description: form.description.trim() || null,
-        category: form.category,
-        frequency: form.frequency,
-        schedule_type: form.schedule_type,
+        name:           form.name.trim(),
+        description:    form.description.trim() || null,
+        category:       form.category,
+        frequency:      form.frequency,
+        schedule_type:  form.schedule_type,
         schedule_value: form.schedule_value ? parseInt(form.schedule_value) : null,
-        assigned_role: form.assigned_role || null,
+        assigned_role:  form.assigned_role || null,
       }
       if (editing) {
         await supabase.from('task_library').update(payload).eq('id', editing.id)
@@ -129,21 +143,25 @@ export default function TaskLibrary() {
     loadData()
   }
 
-  const getCatColor = (cat) => CATEGORIES.find(c => c.value === cat)?.color || '#888'
-  const getCatLabel = (cat) => CATEGORIES.find(c => c.value === cat)?.label || cat
+  const getCatColor  = (cat)  => CATEGORIES.find(c => c.value === cat)?.color || '#888'
+  const getCatLabel  = (cat)  => CATEGORIES.find(c => c.value === cat)?.label || cat
   const getFreqLabel = (freq) => FREQUENCIES.find(f => f.value === freq)?.label || freq
-
-  const scheduleNeedsValue = (type) => type === 'specific_weekday' || type === 'first_weekday_of_month' || type === 'specific_date'
+  const scheduleNeedsValue = (type) =>
+    type === 'specific_weekday' || type === 'first_weekday_of_month' || type === 'specific_date'
 
   const filtered = tasks.filter(t => {
-    if (filterCat !== 'all' && t.category !== filterCat) return false
+    if (filterCat  !== 'all' && t.category  !== filterCat)  return false
     if (filterFreq !== 'all' && t.frequency !== filterFreq) return false
     return true
   })
 
   const isNonSession = (freq) => freq && freq !== 'session' && freq !== 'daily'
 
-  if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spinner" /></div>
+  if (loading) return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="spinner" />
+    </div>
+  )
 
   return (
     <>
@@ -188,24 +206,22 @@ export default function TaskLibrary() {
 
       {/* Scrollable list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-
-        {/* Non-session tasks section */}
         {filtered.filter(t => isNonSession(t.frequency)).length > 0 && (
           <>
             <div className="section-heading" style={{ marginTop: 4 }}>Scheduled tasks</div>
             {filtered.filter(t => isNonSession(t.frequency)).map(task => (
-              <TaskCard key={task.id} task={task} getCatColor={getCatColor} getCatLabel={getCatLabel}
-                getFreqLabel={getFreqLabel} isAdmin={isAdmin()} onEdit={openEdit} onDelete={handleDelete} />
+              <TaskCard key={task.id} task={task}
+                getCatColor={getCatColor} getCatLabel={getCatLabel} getFreqLabel={getFreqLabel}
+                isAdmin={isAdmin()} onEdit={openEdit} onDelete={handleDelete} onDuplicate={openDuplicate} />
             ))}
             <div className="section-heading" style={{ marginTop: 8 }}>Session / daily tasks</div>
           </>
         )}
-
         {filtered.filter(t => !isNonSession(t.frequency)).map(task => (
-          <TaskCard key={task.id} task={task} getCatColor={getCatColor} getCatLabel={getCatLabel}
-            getFreqLabel={getFreqLabel} isAdmin={isAdmin()} onEdit={openEdit} onDelete={handleDelete} />
+          <TaskCard key={task.id} task={task}
+            getCatColor={getCatColor} getCatLabel={getCatLabel} getFreqLabel={getFreqLabel}
+            isAdmin={isAdmin()} onEdit={openEdit} onDelete={handleDelete} onDuplicate={openDuplicate} />
         ))}
-
         {filtered.length === 0 && (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>
@@ -214,10 +230,10 @@ export default function TaskLibrary() {
         )}
       </div>
 
-      {/* Add/Edit form */}
+      {/* Add / Edit form */}
       {showForm && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowForm(false)}>
-          <div className="modal-sheet" style={{ maxHeight: '85vh' }}>
+          <div className="modal-sheet" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
             <div className="modal-handle" />
             <div className="modal-title">{editing ? 'Edit Task' : 'New Task'}</div>
 
@@ -251,7 +267,6 @@ export default function TaskLibrary() {
               </div>
             </div>
 
-            {/* Scheduling — only for weekly and above */}
             {['weekly','fortnightly','monthly','quarterly','yearly'].includes(form.frequency) && (
               <div className="form-group">
                 <label className="form-label">Schedule</label>
@@ -262,7 +277,6 @@ export default function TaskLibrary() {
               </div>
             )}
 
-            {/* Schedule value */}
             {scheduleNeedsValue(form.schedule_type) && (
               <div className="form-group">
                 <label className="form-label">
@@ -306,7 +320,7 @@ export default function TaskLibrary() {
   )
 }
 
-function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdit, onDelete }) {
+function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdit, onDelete, onDuplicate }) {
   const isScheduled = task.frequency && task.frequency !== 'session' && task.frequency !== 'daily'
   return (
     <div style={{
@@ -328,9 +342,9 @@ function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdi
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
           <span className={`badge cat-${task.category}`}>{getCatLabel(task.category)}</span>
           {isScheduled && (
-            <span className="badge" style={{
-              background: '#F0EEF8', color: '#5A4A9A'
-            }}>{getFreqLabel(task.frequency)}</span>
+            <span className="badge" style={{ background: '#F0EEF8', color: '#5A4A9A' }}>
+              {getFreqLabel(task.frequency)}
+            </span>
           )}
           {task.assigned_role && (
             <span className="badge badge-pending">{task.assigned_role}</span>
@@ -338,14 +352,22 @@ function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdi
         </div>
       </div>
       {isAdmin && (
-        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-          <button className="btn btn-outline btn-sm" onClick={() => onEdit(task)}
-            style={{ padding: '5px 10px', fontSize: 12 }}>Edit</button>
-          <button onClick={() => onDelete(task)} style={{
-            padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: 'var(--danger-bg)', color: 'var(--danger)', border: 'none',
-            borderRadius: 'var(--radius-sm)'
-          }}>Del</button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 5 }}>
+            <button className="btn btn-outline btn-sm" onClick={() => onEdit(task)}
+              style={{ padding: '5px 10px', fontSize: 12 }}>Edit</button>
+            <button onClick={() => onDelete(task)} style={{
+              padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--danger-bg)', color: 'var(--danger)', border: 'none',
+              borderRadius: 'var(--radius-sm)'
+            }}>Del</button>
+          </div>
+          <button onClick={() => onDuplicate(task)} style={{
+            padding: '5px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            background: 'var(--aqua-light)', color: 'var(--navy)',
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            width: '100%', textAlign: 'center',
+          }}>⧉ Duplicate</button>
         </div>
       )}
     </div>
