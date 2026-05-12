@@ -105,7 +105,7 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div className="loading-logo">GYMPODS</div>
-        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 4, fontWeight: 600 }}>OPS</div>
+        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 4, fontWeight: 600 }}>OPERATIONS</div>
         <div className="spinner" style={{ marginTop: 32 }} />
       </div>
     )
