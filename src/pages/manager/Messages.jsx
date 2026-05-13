@@ -34,6 +34,7 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
 
   useEffect(() => {
     if (expanded) loadImages()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expanded])
 
   const loadImages = async () => {
@@ -61,7 +62,6 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
       background: cfg.bg, border: `1px solid ${cfg.border}`,
       borderRadius: 'var(--radius-md)', marginBottom: 10, overflow: 'hidden',
     }}>
-      {/* Header row */}
       <div onClick={handleToggle} style={{
         padding: '12px 14px', cursor: 'pointer',
         display: 'flex', gap: 10, alignItems: 'flex-start'
@@ -98,7 +98,6 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
         }}>›</span>
       </div>
 
-      {/* Expanded body */}
       {expanded && (
         <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border)' }}>
           {message.body ? (
@@ -118,7 +117,6 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
               ))}
             </div>
           )}
-          {/* Resolve button */}
           <button
             onClick={handleResolve}
             disabled={resolving}
@@ -144,14 +142,38 @@ export default function Messages() {
   const [showFyi, setShowFyi]   = useState(false)
   const [filter, setFilter]     = useState('all')
 
-  useEffect(() => { loadMessages() }, [])
+  // For HQ / Region Mgr this is the site they're currently viewing.
+  // For regular staff this is their own site.
+  const scopedSiteId = staff.active_site_id || staff.site_id
+
+  useEffect(() => { loadMessages() }, [scopedSiteId])
+
+  // === REALTIME SYNC ===
+  // When any admin resolves or reads a message at this site,
+  // everyone else's view updates within ~1s.
+  useEffect(() => {
+    if (!scopedSiteId) return
+
+    const channel = supabase
+      .channel(`messages-sync-${scopedSiteId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `site_id=eq.${scopedSiteId}` },
+        () => loadMessages()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedSiteId])
 
   const loadMessages = async () => {
+    if (!scopedSiteId) { setMessages([]); setLoading(false); return }
     setLoading(true)
     const { data } = await supabase
       .from('messages')
       .select('*, staff:staff_id(first_name, last_name)')
-      .eq('site_id', staff.site_id)
+      .eq('site_id', scopedSiteId)
       .eq('resolved', false)
       .order('created_at', { ascending: false })
       .limit(100)
@@ -175,6 +197,7 @@ export default function Messages() {
       resolved_by: staff.id,
       resolved_at: new Date().toISOString(),
     }).eq('id', messageId)
+    // Realtime will reconcile, but remove locally for instant feedback
     setMessages(prev => prev.filter(m => m.id !== messageId))
   }
 
@@ -212,7 +235,6 @@ export default function Messages() {
         </div>
       )}
 
-      {/* Filter pills */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', paddingBottom: 2 }}>
         {['all', 'handover', 'member_note', 'general', 'photo'].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
