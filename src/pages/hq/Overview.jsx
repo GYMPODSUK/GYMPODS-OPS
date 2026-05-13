@@ -1,9 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { ROLES } from '../../lib/permissions'
 
 export default function HQOverview() {
-  const { switchSite } = useAuth()
+  const { staff, switchSite } = useAuth()
+  const isRegionMgr = staff?.role === ROLES.REGION_MANAGER
+  const myRegionId  = staff?.region_id || null
+
   const [regions, setRegions] = useState([])
   const [sites, setSites] = useState([])
   const [siteStats, setSiteStats] = useState({})
@@ -11,44 +15,30 @@ export default function HQOverview() {
   const [loading, setLoading] = useState(true)
   const today = new Date().toISOString().split('T')[0]
 
-  useEffect(() => { loadData() }, [])
+  // Load sites + regions + per-site stats.
+  // Region Managers see only their region's sites; HQ sees everything.
+  const loadAll = useCallback(async () => {
+    let sitesQ = supabase.from('sites').select('*, regions(name)').eq('active', true).order('name')
+    if (isRegionMgr && myRegionId) sitesQ = sitesQ.eq('region_id', myRegionId)
 
-  // Live refresh of urgent messages across the network
-  useEffect(() => {
-    const channel = supabase
-      .channel('hq-urgent-feed')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        () => loadUrgentMessages())
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+    let regionsQ = supabase.from('regions').select('*').order('name')
+    if (isRegionMgr && myRegionId) regionsQ = regionsQ.eq('id', myRegionId)
 
-  const loadData = async () => {
-    setLoading(true)
-
-    // Sites + regions in parallel
-    const [{ data: siteData }, { data: regionData }] = await Promise.all([
-      supabase.from('sites').select('*, regions(name)').eq('active', true).order('name'),
-      supabase.from('regions').select('*').order('name'),
-    ])
-
+    const [{ data: siteData }, { data: regionData }] = await Promise.all([sitesQ, regionsQ])
     setSites(siteData || [])
     setRegions(regionData || [])
 
     if (siteData?.length) {
       const stats = {}
       for (const site of siteData) {
-        const { data: comp } = await supabase
-          .from('task_completions').select('status').eq('site_id', site.id).eq('date', today)
-        const { data: issues } = await supabase
-          .from('issues').select('id').eq('site_id', site.id).eq('status', 'open')
-        const { data: urgent } = await supabase
-          .from('messages').select('id').eq('site_id', site.id)
-          .eq('priority', 'urgent').eq('resolved', false)
-        const { data: shiftTasks } = await supabase
-          .from('shift_tasks').select('id, shift_definitions!inner(site_id)')
-          .eq('shift_definitions.site_id', site.id)
+        const [{ data: comp }, { data: issues }, { data: urgent }, { data: shiftTasks }] = await Promise.all([
+          supabase.from('task_completions').select('status').eq('site_id', site.id).eq('date', today),
+          supabase.from('issues').select('id').eq('site_id', site.id).eq('status', 'open'),
+          supabase.from('messages').select('id').eq('site_id', site.id)
+            .eq('priority', 'urgent').eq('resolved', false),
+          supabase.from('shift_tasks').select('id, shift_definitions!inner(site_id)')
+            .eq('shift_definitions.site_id', site.id),
+        ])
         stats[site.id] = {
           completed:  comp?.filter(c => c.status === 'completed').length || 0,
           flagged:    comp?.filter(c => c.status === 'flagged').length || 0,
@@ -58,29 +48,55 @@ export default function HQOverview() {
         }
       }
       setSiteStats(stats)
+    } else {
+      setSiteStats({})
     }
+  }, [today, isRegionMgr, myRegionId])
 
-    await loadUrgentMessages()
-    setLoading(false)
-  }
-
-  const loadUrgentMessages = async () => {
-    const { data } = await supabase
+  // Urgent messages — scoped by region for Region Mgrs, all sites for HQ
+  const loadUrgentMessages = useCallback(async () => {
+    let q = supabase
       .from('messages')
-      .select('*, sites(name), staff:staff_id(first_name, last_name)')
+      .select('*, sites!inner(name, region_id), staff:staff_id(first_name, last_name)')
       .eq('priority', 'urgent')
       .eq('resolved', false)
       .order('created_at', { ascending: false })
       .limit(20)
+    if (isRegionMgr && myRegionId) q = q.eq('sites.region_id', myRegionId)
+    const { data } = await q
     setUrgentMessages(data || [])
-  }
+  }, [isRegionMgr, myRegionId])
+
+  // Initial load
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      await Promise.all([loadAll(), loadUrgentMessages()])
+      setLoading(false)
+    })()
+  }, [loadAll, loadUrgentMessages])
+
+  // === REAL-TIME SUBSCRIPTIONS ===
+  // Refresh stats + urgent feed whenever issues, task_completions, or
+  // messages change anywhere relevant.
+  useEffect(() => {
+    const channel = supabase
+      .channel('hq-network-live')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'issues' },
+        () => loadAll())
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'task_completions' },
+        () => loadAll())
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        () => { loadAll(); loadUrgentMessages() })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [loadAll, loadUrgentMessages])
 
   const handleOpenSite = async (siteId) => {
     await switchSite(siteId)
-    // After switchSite, App.jsx remounts with the new active site context.
-    // To land them on Messages or Issues we'd need a navigation event;
-    // for now, returning to the network view + the picker in App is enough.
-    // (Phase 2: add an onNavigate callback to surface the site's Messages page.)
   }
 
   if (loading) return (
@@ -90,22 +106,25 @@ export default function HQOverview() {
     </div>
   )
 
-  // Group sites by region; sites with no region appear under "Unassigned"
   const sitesByRegion = regions.map(r => ({
-    ...r,
-    sites: sites.filter(s => s.region_id === r.id),
+    ...r, sites: sites.filter(s => s.region_id === r.id),
   }))
   const unassigned = sites.filter(s => !s.region_id)
 
+  // Title varies by role
+  const title    = isRegionMgr ? 'Region Overview' : 'Network Overview'
+  const subtitle = isRegionMgr
+    ? `${sites.length} ${sites.length === 1 ? 'site' : 'sites'} in your region`
+    : `${sites.length} ${sites.length === 1 ? 'site' : 'sites'} across ${sitesByRegion.filter(r => r.sites.length > 0).length} ${sitesByRegion.filter(r => r.sites.length > 0).length === 1 ? 'region' : 'regions'}`
+
   return (
     <div className="page-content">
-      <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--navy)' }}>Network Overview</div>
+      <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--navy)' }}>{title}</div>
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: -6 }}>
         {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-        {' · '}{sites.length} {sites.length === 1 ? 'site' : 'sites'} across {sitesByRegion.filter(r => r.sites.length > 0).length} {sitesByRegion.filter(r => r.sites.length > 0).length === 1 ? 'region' : 'regions'}
+        {' · '}{subtitle}
       </div>
 
-      {/* Urgent feed — only shown when there's something to act on */}
       {urgentMessages.length > 0 && (
         <div style={{
           background: 'rgba(232,48,26,0.06)',
@@ -116,7 +135,8 @@ export default function HQOverview() {
           marginTop: 4,
         }}>
           <div style={{ fontWeight: 800, fontSize: 14, color: '#E8301A', marginBottom: 10 }}>
-            🔴 {urgentMessages.length} urgent {urgentMessages.length === 1 ? 'alert' : 'alerts'} across the network
+            🔴 {urgentMessages.length} urgent {urgentMessages.length === 1 ? 'alert' : 'alerts'}
+            {isRegionMgr ? ' in your region' : ' across the network'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {urgentMessages.slice(0, 5).map(m => (
@@ -154,7 +174,6 @@ export default function HQOverview() {
         </div>
       )}
 
-      {/* Sites grouped by region */}
       {sitesByRegion.filter(r => r.sites.length > 0).map(region => (
         <div key={region.id} style={{ marginTop: 12 }}>
           <div style={{
@@ -186,8 +205,8 @@ export default function HQOverview() {
         </div>
       )}
 
-      {/* Empty regions (e.g. Dubai before any sites exist) — quietly listed for franchise positioning */}
-      {sitesByRegion.filter(r => r.sites.length === 0).length > 0 && (
+      {/* Only show "Expansion regions" footer to HQ — Region Mgrs don't need it */}
+      {!isRegionMgr && sitesByRegion.filter(r => r.sites.length === 0).length > 0 && (
         <div style={{ marginTop: 20, padding: 12, background: 'var(--off-white)', borderRadius: 'var(--radius-md)' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>
             Expansion regions
