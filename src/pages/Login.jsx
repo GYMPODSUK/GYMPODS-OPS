@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { VALID_PIN_LENGTHS } from '../lib/permissions'
 
 export default function Login() {
   const { loginWithPin } = useAuth()
@@ -12,6 +13,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [shake, setShake] = useState(false)
   const [sitesLoading, setSitesLoading] = useState(true)
+  const lastAttemptRef = useRef('')
 
   useEffect(() => {
     supabase.from('sites').select('*').eq('active', true).order('name').then(({ data }) => {
@@ -25,28 +27,77 @@ export default function Login() {
     setStep('pin')
     setError('')
     setPin('')
+    lastAttemptRef.current = ''
   }
 
-  const handleDigit = async (digit) => {
+  // Try logging in with a given PIN string.
+  // Called automatically at 4/6/8 digit lengths, AND on Enter button.
+  const attemptLogin = async (candidate) => {
     if (loading) return
-    setError('')
-    const next = pin + digit
-    setPin(next)
-    if (next.length === 4) {
-      setLoading(true)
-      const result = await loginWithPin(next, selectedSite.id)
-      setLoading(false)
-      if (!result.success) {
-        setShake(true)
-        setTimeout(() => { setShake(false); setPin('') }, 600)
-        setError('Incorrect PIN — try again')
-      }
+    // Don't retry the exact same string twice (avoids spam on 4-then-6 typing)
+    if (candidate === lastAttemptRef.current) return
+    lastAttemptRef.current = candidate
+
+    setLoading(true)
+    const result = await loginWithPin(candidate, selectedSite.id)
+    setLoading(false)
+
+    if (result.success) return // App.jsx will rerender on staff state
+
+    // Failed. If they're at the max length (8), shake and clear.
+    // If they're at a shorter valid length (4 or 6), let them keep typing
+    // — they might be a Site Mgr or HQ partway through.
+    if (candidate.length >= 8) {
+      setShake(true)
+      setTimeout(() => { setShake(false); setPin(''); lastAttemptRef.current = '' }, 600)
+      setError('Incorrect PIN — try again')
     }
   }
 
-  const handleBack = () => { if (!loading) { setError(''); setPin(p => p.slice(0, -1)) } }
-  const handleClear = () => { if (!loading) { setError(''); setPin('') } }
+  const handleDigit = async (digit) => {
+    if (loading || pin.length >= 8) return
+    setError('')
+    const next = pin + digit
+    setPin(next)
+
+    // Auto-attempt at every valid PIN length boundary
+    if (VALID_PIN_LENGTHS.includes(next.length)) {
+      await attemptLogin(next)
+    }
+  }
+
+  const handleBack = () => {
+    if (loading) return
+    setError('')
+    const next = pin.slice(0, -1)
+    setPin(next)
+    // Clear the last-attempt cache so they can retry as they re-type
+    lastAttemptRef.current = ''
+  }
+
+  const handleClear = () => {
+    if (loading) return
+    setError('')
+    setPin('')
+    lastAttemptRef.current = ''
+  }
+
+  const handleEnter = async () => {
+    if (loading || pin.length === 0) return
+    // Allow manual submit at any length; useful for ambiguous cases
+    if (!VALID_PIN_LENGTHS.includes(pin.length)) {
+      setError(`PIN must be ${VALID_PIN_LENGTHS.join(', ')} digits`)
+      return
+    }
+    // Force the attempt even if we tried this exact string before
+    lastAttemptRef.current = ''
+    await attemptLogin(pin)
+  }
+
   const buttons = ['1','2','3','4','5','6','7','8','9','C','0','⌫']
+
+  // PIN dots: show 4 by default, expand to 6 once user passes 4, to 8 once user passes 6
+  const dotCount = pin.length > 6 ? 8 : pin.length > 4 ? 6 : 4
 
   return (
     <div style={{
@@ -94,7 +145,7 @@ export default function Login() {
       {/* Step 2 — PIN entry */}
       {step === 'pin' && (
         <>
-          <button onClick={() => { setStep('site'); setPin(''); setError('') }} style={{
+          <button onClick={() => { setStep('site'); setPin(''); setError(''); lastAttemptRef.current = '' }} style={{
             position: 'absolute', top: '24px', left: '24px',
             color: 'var(--aqua)', fontSize: '13px', fontWeight: '600',
             background: 'none', border: 'none', cursor: 'pointer',
@@ -106,10 +157,10 @@ export default function Login() {
             <div style={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)', fontWeight: '500' }}>
               Enter your PIN
             </div>
-            <div style={{ display: 'flex', gap: '16px', animation: shake ? 'shake 0.5s ease' : 'none' }}>
-              {[0,1,2,3].map(i => (
+            <div style={{ display: 'flex', gap: '12px', animation: shake ? 'shake 0.5s ease' : 'none' }}>
+              {Array.from({ length: dotCount }).map((_, i) => (
                 <div key={i} style={{
-                  width: '16px', height: '16px', borderRadius: '50%',
+                  width: '14px', height: '14px', borderRadius: '50%',
                   background: i < pin.length ? 'var(--aqua)' : 'rgba(255,255,255,0.15)',
                   transition: 'background 0.15s',
                   transform: i < pin.length ? 'scale(1.1)' : 'scale(1)'
@@ -123,7 +174,7 @@ export default function Login() {
             {buttons.map(btn => (
               <button key={btn}
                 onClick={() => { if (btn === '⌫') handleBack(); else if (btn === 'C') handleClear(); else handleDigit(btn) }}
-                disabled={loading || (btn !== '⌫' && btn !== 'C' && pin.length >= 4)}
+                disabled={loading || (btn !== '⌫' && btn !== 'C' && pin.length >= 8)}
                 style={{
                   height: '64px', borderRadius: '14px',
                   fontSize: btn === '⌫' ? '20px' : '24px',
@@ -138,6 +189,30 @@ export default function Login() {
               </button>
             ))}
           </div>
+
+          {/* Enter button — used when user wants to submit a 6-digit PIN
+              that didn't auto-login (because they hadn't keyed all 8 yet),
+              or for any manual confirmation. Shown only when there's
+              something to submit. */}
+          {pin.length > 0 && (
+            <button
+              onClick={handleEnter}
+              disabled={loading}
+              style={{
+                width: '100%', maxWidth: '280px',
+                padding: '14px', borderRadius: '14px',
+                background: VALID_PIN_LENGTHS.includes(pin.length) ? 'var(--aqua)' : 'rgba(127,192,195,0.2)',
+                color: VALID_PIN_LENGTHS.includes(pin.length) ? 'var(--navy)' : 'rgba(255,255,255,0.4)',
+                border: 'none',
+                fontSize: '15px', fontWeight: '700',
+                fontFamily: 'var(--font)',
+                cursor: VALID_PIN_LENGTHS.includes(pin.length) && !loading ? 'pointer' : 'not-allowed',
+                transition: 'all 0.15s',
+              }}
+            >
+              {loading ? '···' : 'Enter'}
+            </button>
+          )}
         </>
       )}
 
