@@ -16,26 +16,53 @@ export default function Issues() {
   const [filter, setFilter] = useState('open')
   const [selectedIssue, setSelectedIssue] = useState(null)
   const [issueImages, setIssueImages] = useState([])
-  const [resolving, setResolving] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [toast, setToast] = useState(null)
 
+  // Site this view is scoped to. HQ/Region Mgr use active_site_id (the
+  // site they're currently viewing); regular staff fall back to site_id.
+  const scopedSiteId = staff.active_site_id || staff.site_id
+
   useEffect(() => { loadIssues() }, [filter])
+
+  // === REALTIME SYNC (the fix for the dashboard duplication bug) ===
+  // When any admin updates an issue at this site, every admin's
+  // dashboard re-fetches within ~1s — no more stale "still open"
+  // items after a colleague resolves something.
+  useEffect(() => {
+    if (!scopedSiteId && !isHQ()) return
+
+    const filterClause = isHQ() ? undefined : `site_id=eq.${scopedSiteId}`
+
+    const channel = supabase
+      .channel(`issues-sync-${scopedSiteId || 'hq'}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'issues', ...(filterClause ? { filter: filterClause } : {}) },
+        () => loadIssues()
+      )
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedSiteId, filter])
 
   const loadIssues = async () => {
     setLoading(true)
-    // Use explicit column hints for foreign key joins
     let q = supabase
       .from('issues')
       .select(`
         *,
         reporter:staff_id ( first_name, last_name ),
-        sites:site_id ( name )
+        sites:site_id ( name ),
+        resolver:resolved_by ( first_name, last_name ),
+        claimer:claimed_by ( first_name, last_name )
       `)
       .order('created_at', { ascending: false })
 
     if (filter !== 'all') q = q.eq('status', filter)
-    if (!isHQ()) q = q.eq('site_id', staff.site_id)
+    // HQ sees all sites; everyone else sees only their scoped site
+    if (!isHQ()) q = q.eq('site_id', scopedSiteId)
 
     const { data, error } = await q
     if (error) console.error('Issues query error:', error)
@@ -57,12 +84,17 @@ export default function Issues() {
     if (newStatus === 'resolved') {
       update.resolved_by = staff.id
       update.resolved_at = new Date().toISOString()
+    } else if (newStatus === 'in_progress') {
+      update.claimed_by = staff.id
+      update.claimed_at = new Date().toISOString()
     }
     const { error } = await supabase.from('issues').update(update).eq('id', selectedIssue.id)
     if (!error) {
       setSelectedIssue(prev => ({ ...prev, ...update }))
       showToast(newStatus === 'resolved' ? 'Issue resolved ✓' : 'Status updated')
-      loadIssues()
+      // No need to manually call loadIssues — the realtime subscription
+      // above will pick this up and refresh, including for other admins
+      // logged in at this site.
     }
     setUpdatingStatus(false)
   }
@@ -146,6 +178,8 @@ export default function Issues() {
                     {issue.reporter?.first_name} {issue.reporter?.last_name}
                     {isHQ() && issue.sites && ` · ${issue.sites.name}`}
                     {' · '}{timeAgo(issue.created_at)}
+                    {issue.claimer && issue.status === 'in_progress' &&
+                      ` · Claimed by ${issue.claimer.first_name}`}
                   </div>
                 </div>
                 <div>
@@ -167,7 +201,6 @@ export default function Issues() {
           <div className="modal-sheet" style={{ maxHeight: '85vh' }}>
             <div className="modal-handle" />
 
-            {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <div style={{ flex: 1, paddingRight: 12 }}>
                 <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--navy)', lineHeight: 1.3 }}>
@@ -191,7 +224,6 @@ export default function Issues() {
               {isHQ() && selectedIssue.sites && ` · ${selectedIssue.sites.name}`}
             </div>
 
-            {/* Description */}
             {selectedIssue.description && (
               <div style={{ background: 'var(--off-white)', borderRadius: 'var(--radius-md)', padding: 14, marginBottom: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</div>
@@ -201,7 +233,6 @@ export default function Issues() {
               </div>
             )}
 
-            {/* Photos */}
             {issueImages.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -217,16 +248,23 @@ export default function Issues() {
               </div>
             )}
 
-            {/* Resolution info */}
-            {selectedIssue.status === 'resolved' && selectedIssue.resolved_at && (
-              <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
-                <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-                  ✓ Resolved {formatDate(selectedIssue.resolved_at)}
+            {selectedIssue.status === 'in_progress' && selectedIssue.claimer && (
+              <div style={{ background: 'var(--warning-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 600 }}>
+                  🔧 Being handled by {selectedIssue.claimer.first_name} {selectedIssue.claimer.last_name}
                 </div>
               </div>
             )}
 
-            {/* Action buttons */}
+            {selectedIssue.status === 'resolved' && selectedIssue.resolved_at && (
+              <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+                  ✓ Resolved {formatDate(selectedIssue.resolved_at)}
+                  {selectedIssue.resolver && ` by ${selectedIssue.resolver.first_name} ${selectedIssue.resolver.last_name}`}
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {selectedIssue.status === 'open' && (
                 <button className="btn" onClick={() => updateStatus('in_progress')} disabled={updatingStatus} style={{
