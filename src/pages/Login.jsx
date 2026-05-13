@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { VALID_PIN_LENGTHS } from '../lib/permissions'
 
+
+
 export default function Login() {
   const { loginWithPin } = useAuth()
   const [step, setStep] = useState('site')
