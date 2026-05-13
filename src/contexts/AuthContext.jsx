@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
     // 2. Find active staff matching this PIN
     const { data: matches, error: staffErr } = await supabase
       .from('staff')
-      .select('*, sites(name, address)')
+      .select('*, sites!staff_site_id_fkey(name, address)')
       .eq('pin', pin)
       .eq('active', true)
 
