@@ -25,7 +25,7 @@ export default function StaffManagement() {
 
   const loadData = async () => {
     setLoading(true)
-    let q = supabase.from('staff').select('*, sites(name)').eq('active', true).order('first_name')
+    let q = supabase.from('staff').select('*, sites!staff_site_id_fkey(name)').eq('active', true).order('first_name')
     if (!isHQ()) q = q.eq('site_id', currentStaff.site_id)
     const { data } = await q
 
