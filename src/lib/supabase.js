@@ -1,6 +1,15 @@
 import { createClient } from '@supabase/supabase-js'
 
-const SUPABASE_URL = 'https://sdfoakmwefirdcwugqqc.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkZm9ha213ZWZpcmRjd3VncXFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxMTY1NDgsImV4cCI6MjA5MzY5MjU0OH0.KBOJjWRFs9A2OMXLv0CYW5JFSPwBrVrYSyWOGaeyOnM'
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  // Loud, clear error if env vars are missing — fails fast at startup
+  // rather than producing cryptic Supabase errors later.
+  throw new Error(
+    'Missing Supabase environment variables. ' +
+    'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel project settings.'
+  )
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
