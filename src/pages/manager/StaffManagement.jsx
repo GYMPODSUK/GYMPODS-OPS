@@ -53,7 +53,6 @@ export default function StaffManagement() {
     let staffQ = supabase
       .from('staff')
       .select('*, sites!staff_site_id_fkey(name)')
-      .eq('active', true)
       .order('first_name')
 
     if (myRole === ROLES.REGION_MANAGER) {
@@ -244,7 +243,12 @@ export default function StaffManagement() {
 
   if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="spinner" /></div>
 
-  const totalStaff = staffBySite.reduce((sum, g) => sum + g.staff.length, 0)
+  const activeStaffBySite = staffBySite.map(g => ({
+    ...g,
+    staff: g.staff.filter(s => s.active),
+  }))
+  const inactiveStaff = staffBySite.flatMap(g => g.staff.filter(s => !s.active))
+  const totalStaff = activeStaffBySite.reduce((sum, g) => sum + g.staff.length, 0)
 
   return (
     <>
@@ -267,7 +271,7 @@ export default function StaffManagement() {
 
         {/* Scrollable list grouped by site */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 24px' }}>
-          {staffBySite.map(group => (
+          {activeStaffBySite.map(group => (
             <div key={group.site.id} style={{ marginBottom: 20 }}>
               {(isHQ() || myRole === ROLES.REGION_MANAGER) && (
                 <div style={{
@@ -333,15 +337,27 @@ export default function StaffManagement() {
                           }}>Reset PIN</button>
                           <button onClick={() => toggleActive(s)} style={{
                             padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                            background: 'var(--danger-bg)', color: 'var(--danger)', border: 'none',
+                            background: s.active ? 'var(--danger-bg)' : 'var(--success-bg)',
+                            color: s.active ? 'var(--danger)' : 'var(--success)',
+                            border: 'none',
                             borderRadius: 'var(--radius-sm)'
-                          }}>Off</button>
+                          }}>{s.active ? 'Deactivate' : 'Reactivate'}</button>
                         </div>
                       )}
                     </div>
                   )
                 })
               )}
+              {inactiveStaff.length > 0 && (
+            <InactiveSection
+              staff={inactiveStaff}
+              canActOn={canActOn}
+              onEdit={openEdit}
+              onReset={setResetting}
+              onToggleActive={toggleActive}
+              currentStaffId={currentStaff.id}
+            />
+          )}
             </div>
           ))}
         </div>
@@ -517,4 +533,60 @@ function ResetPinModal({ staff, onClose, onReset }) {
       </div>
     </div>
   )
+  function InactiveSection({ staff, canActOn, onEdit, onReset, onToggleActive, currentStaffId }) {
+  const [open, setOpen] = React.useState(false)
+
+  return (
+    <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: 'flex', alignItems: 'center', gap: 8, background: 'none',
+        border: 'none', cursor: 'pointer', color: 'var(--text-secondary)',
+        fontSize: 13, fontWeight: 700, padding: 0, marginBottom: open ? 10 : 0,
+        textTransform: 'uppercase', letterSpacing: '0.5px',
+      }}>
+        <span style={{
+          transform: open ? 'rotate(90deg)' : 'none',
+          transition: 'transform 0.2s', display: 'inline-block',
+        }}>›</span>
+        Inactive staff ({staff.length})
+      </button>
+
+      {open && staff.map(s => {
+        const canTouch = canActOn(s)
+        return (
+          <div key={s.id} style={{
+            background: 'var(--off-white)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)', padding: '12px 14px',
+            display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8,
+            opacity: 0.7,
+          }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: '50%',
+              background: 'var(--border)', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontWeight: 800, fontSize: 15,
+              color: 'var(--text-light)', flexShrink: 0,
+            }}>
+              {s.first_name[0]}{s.last_name?.[0] || ''}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, textDecoration: 'line-through', color: 'var(--text-light)' }}>
+                {s.first_name} {s.last_name}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 3 }}>
+                Inactive · {s.sites?.name || 'No site'}
+              </div>
+            </div>
+            {canTouch && (
+              <button onClick={() => onToggleActive(s)} style={{
+                padding: '5px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                background: 'var(--success-bg)', color: 'var(--success)', border: 'none',
+                borderRadius: 'var(--radius-sm)',
+              }}>Reactivate</button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 }
