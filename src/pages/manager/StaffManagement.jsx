@@ -19,7 +19,7 @@ export default function StaffManagement() {
   const myRegionId = currentStaff?.region_id
   const mySiteId   = currentStaff?.active_site_id || currentStaff?.site_id
 
-  const [staffBySite, setStaffBySite] = useState([]) // [{ site, staff[] }]
+  const [staffBySite, setStaffBySite] = useState([])
   const [sites, setSites] = useState([])
   const [regions, setRegions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -27,7 +27,7 @@ export default function StaffManagement() {
   const [editing, setEditing] = useState(null)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState(null)
-  const [resetting, setResetting] = useState(null) // staff member whose PIN is being reset
+  const [resetting, setResetting] = useState(null)
 
   const [form, setForm] = useState({
     first_name: '', last_name: '', pin: '',
@@ -39,7 +39,6 @@ export default function StaffManagement() {
   const loadData = async () => {
     setLoading(true)
 
-    // Sites + regions (scoped to user's authority)
     let sitesQ = supabase.from('sites').select('id, name, region_id').eq('active', true).order('name')
     if (myRole === ROLES.REGION_MANAGER) sitesQ = sitesQ.eq('region_id', myRegionId)
     if (myRole === ROLES.ADMIN) sitesQ = sitesQ.eq('id', mySiteId)
@@ -49,14 +48,12 @@ export default function StaffManagement() {
     const { data: regionData } = await supabase.from('regions').select('id, name').order('name')
     setRegions(regionData || [])
 
-    // Staff — scoped to user's authority
     let staffQ = supabase
       .from('staff')
       .select('*, sites!staff_site_id_fkey(name)')
       .order('first_name')
 
     if (myRole === ROLES.REGION_MANAGER) {
-      // Region Mgr sees: staff at sites in their region, plus other Region Mgrs in their region
       const regionSiteIds = (siteData || []).map(s => s.id)
       if (regionSiteIds.length > 0) {
         staffQ = staffQ.or(`site_id.in.(${regionSiteIds.join(',')}),and(role.eq.region_manager,region_id.eq.${myRegionId})`)
@@ -64,16 +61,12 @@ export default function StaffManagement() {
         staffQ = staffQ.eq('region_id', myRegionId)
       }
     } else if (myRole === ROLES.ADMIN) {
-      // Site Mgr sees: staff at their site only
       staffQ = staffQ.eq('site_id', mySiteId)
     }
-    // HQ sees everyone — no filter
 
     const { data: staffData } = await staffQ
 
-    // Group by site (HQ + Region Mgr); single group for Site Mgr
     if (isHQ() || myRole === ROLES.REGION_MANAGER) {
-      // Special "no site" group for HQ + Region Managers (NULL site_id)
       const orphans = (staffData || []).filter(s => !s.site_id)
       const grouped = (siteData || []).map(site => ({
         site,
@@ -101,16 +94,13 @@ export default function StaffManagement() {
     setTimeout(() => setToast(null), 2200)
   }
 
-  // Roles this user is allowed to assign
   const assignableRoles = Object.keys(ROLE_LABEL).filter(r => canPromoteTo(myRole, r))
 
-  // Is the current user allowed to edit / reset this staff member?
   const canActOn = (s) => {
-    if (!s || s.id === currentStaff.id) return false  // can't edit yourself here
-    if (!canPromoteTo(myRole, s.role)) return false   // target role above our authority
+    if (!s || s.id === currentStaff.id) return false
+    if (!canPromoteTo(myRole, s.role)) return false
     if (isHQ()) return true
     if (myRole === ROLES.REGION_MANAGER) {
-      // Must be in our region (via site or direct region_id)
       const inOurRegion = s.region_id === myRegionId ||
         sites.some(site => site.id === s.site_id)
       return inOurRegion
@@ -125,7 +115,7 @@ export default function StaffManagement() {
     setEditing(null)
     setForm({
       first_name: '', last_name: '', pin: '',
-      role: assignableRoles[assignableRoles.length - 1] || 'foh',   // default to lowest role
+      role: assignableRoles[assignableRoles.length - 1] || 'foh',
       site_id: myRole === ROLES.ADMIN ? mySiteId : '',
       region_id: myRole === ROLES.REGION_MANAGER ? myRegionId : '',
       active: true,
@@ -137,7 +127,7 @@ export default function StaffManagement() {
     setEditing(s)
     setForm({
       first_name: s.first_name, last_name: s.last_name,
-      pin: '', // never preload PIN — Pattern A
+      pin: '',
       role: s.role,
       site_id: s.site_id || '',
       region_id: s.region_id || '',
@@ -146,20 +136,17 @@ export default function StaffManagement() {
     setShowForm(true)
   }
 
-  // Required PIN length for the role currently selected in the form
   const requiredPinLen = PIN_LENGTH[form.role] || 4
   const pinValid = new RegExp(`^\\d{${requiredPinLen}}$`).test(form.pin)
 
   const handleSave = async () => {
     if (!form.first_name.trim()) { showToast('First name required', 'error'); return }
 
-    // Role-aware: ensure user can assign this role
     if (!canPromoteTo(myRole, form.role)) {
       showToast(`You can't assign the ${ROLE_LABEL[form.role]} role`, 'error')
       return
     }
 
-    // Site/region validity per role
     if (form.role === ROLES.HQ) {
       form.site_id = null
       form.region_id = null
@@ -170,7 +157,6 @@ export default function StaffManagement() {
       if (!form.site_id) { showToast('Site required', 'error'); return }
     }
 
-    // PIN validation — only required when creating new staff or explicitly setting one
     if (!editing) {
       if (!pinValid) {
         showToast(`PIN must be exactly ${requiredPinLen} digits for ${ROLE_LABEL[form.role]}`, 'error')
@@ -188,7 +174,6 @@ export default function StaffManagement() {
         region_id:  form.region_id || null,
         active:     form.active,
       }
-      // Only set pin on insert; edits never overwrite PIN here (Pattern A — use Reset)
       if (!editing) payload.pin = form.pin
 
       if (editing) {
@@ -214,7 +199,6 @@ export default function StaffManagement() {
     loadData()
   }
 
-  // ── PIN reset flow ────────────────────────────────────────────
   const handlePinReset = async (newPin, reasonCode, reasonNote) => {
     if (!resetting) return
     const targetLen = PIN_LENGTH[resetting.role] || 4
@@ -228,7 +212,6 @@ export default function StaffManagement() {
     const { error: updateErr } = await supabase.from('staff').update({ pin: newPin }).eq('id', resetting.id)
     if (updateErr) return { error: updateErr.message }
 
-    // Write to audit log — silent failure won't block the reset itself
     await supabase.from('pin_changes').insert({
       staff_id:    resetting.id,
       changed_by:  currentStaff.id,
@@ -253,7 +236,6 @@ export default function StaffManagement() {
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        {/* Fixed header */}
         <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '14px 16px', flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -269,7 +251,6 @@ export default function StaffManagement() {
           </div>
         </div>
 
-        {/* Scrollable list grouped by site */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 24px' }}>
           {activeStaffBySite.map(group => (
             <div key={group.site.id} style={{ marginBottom: 20 }}>
@@ -320,7 +301,6 @@ export default function StaffManagement() {
                           <span className={`badge ${s.role === 'hq' ? 'role-hq' : (s.role === 'admin' || s.role === 'region_manager') ? 'role-admin' : 'role-foh'}`}>
                             {ROLE_LABEL[s.role] || s.role}
                           </span>
-                          {/* PIN never displayed — Pattern A */}
                           <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 500 }}>
                             🔒 PIN set
                           </span>
@@ -348,18 +328,16 @@ export default function StaffManagement() {
                   )
                 })
               )}
-              {inactiveStaff.length > 0 && (
+            </div>
+          ))}
+
+          {inactiveStaff.length > 0 && (
             <InactiveSection
               staff={inactiveStaff}
               canActOn={canActOn}
-              onEdit={openEdit}
-              onReset={setResetting}
               onToggleActive={toggleActive}
-              currentStaffId={currentStaff.id}
             />
           )}
-            </div>
-          ))}
         </div>
       </div>
 
@@ -393,7 +371,6 @@ export default function StaffManagement() {
               </div>
             </div>
 
-            {/* Site / Region pickers — depend on role */}
             {form.role !== ROLES.HQ && form.role !== ROLES.REGION_MANAGER && (
               <div className="form-group">
                 <label className="form-label">Site</label>
@@ -415,7 +392,6 @@ export default function StaffManagement() {
               </div>
             )}
 
-            {/* PIN — only on creation; resets happen via Reset PIN flow */}
             {!editing && (
               <div className="form-group">
                 <label className="form-label">{requiredPinLen}-digit PIN</label>
@@ -533,8 +509,10 @@ function ResetPinModal({ staff, onClose, onReset }) {
       </div>
     </div>
   )
-  function InactiveSection({ staff, canActOn, onEdit, onReset, onToggleActive, currentStaffId }) {
-  const [open, setOpen] = React.useState(false)
+}
+
+function InactiveSection({ staff, canActOn, onToggleActive }) {
+  const [open, setOpen] = useState(false)
 
   return (
     <div style={{ marginTop: 24, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
@@ -588,5 +566,4 @@ function ResetPinModal({ staff, onClose, onReset }) {
       })}
     </div>
   )
-}
 }
