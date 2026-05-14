@@ -30,19 +30,38 @@ const Icon = ({ name, size = 22 }) => {
 }
 
 function Header({ staff, onLogout, onCompose, isFOH }) {
-  const roleLabel = { trainee: 'Trainee', cleaner: 'Cleaner', foh: 'FOH', senior_foh: 'Sr. FOH', admin: 'Manager', hq: 'HQ' }
-  const roleClass = { trainee: 'role-foh', cleaner: 'role-foh', foh: 'role-foh', senior_foh: 'role-foh', admin: 'role-admin', hq: 'role-hq' }
+  const roleLabel = {
+    trainee:        'Trainee',
+    cleaner:        'Cleaner',
+    foh:            'FOH',
+    senior_foh:     'Sr. FOH',
+    admin:          'Site Manager',
+    region_manager: 'Region Mgr',
+    hq:             'HQ',
+  }
+  const roleClass = {
+    trainee:        'role-foh',
+    cleaner:        'role-foh',
+    foh:            'role-foh',
+    senior_foh:     'role-foh',
+    admin:          'role-admin',
+    region_manager: 'role-admin',
+    hq:             'role-hq',
+  }
+  // For HQ / Region Mgr, the active_site is the site they're currently viewing.
+  // For regular staff, staff.sites is their home site. Either is fine to display.
+  const siteName = staff.active_site?.name || staff.sites?.name || 'OPERATIONS'
   return (
     <div className="header">
       <div className="header-logo">
         <div className="header-brand">GYMPODS</div>
-        <div className="header-site">{staff.sites?.name || 'OPERATIONS'}</div>
+        <div className="header-site">{siteName}</div>
       </div>
       <div className="header-user">
         <div>
           <div className="header-name">{staff.first_name}</div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
-            <span className={`header-role ${roleClass[staff.role]}`}>{roleLabel[staff.role]}</span>
+            <span className={`header-role ${roleClass[staff.role] || 'role-foh'}`}>{roleLabel[staff.role] || staff.role}</span>
           </div>
         </div>
         {isFOH && (
@@ -97,7 +116,10 @@ export default function App() {
   const { staff, loading, logout, isAdmin, isHQ } = useAuth()
   const [selectedShift, setSelectedShift] = useState(null)
   const [locationData, setLocationData]   = useState(null)
-  const [managerTab, setManagerTab]       = useState('dashboard')
+  // HQ + Region Mgr land on 'network' overview by default;
+  // Site admins land on their site dashboard.
+  const defaultTab = (staff?.role === 'hq' || staff?.role === 'region_manager') ? 'network' : 'dashboard'
+  const [managerTab, setManagerTab]       = useState(defaultTab)
   const [composing, setComposing]         = useState(false)
   const [unreadUrgent, setUnreadUrgent]   = useState(0)
 
@@ -116,7 +138,7 @@ export default function App() {
   const handleLogout = () => {
     setSelectedShift(null)
     setLocationData(null)
-    setManagerTab('dashboard')
+    setManagerTab(defaultTab)
     logout()
   }
 
@@ -125,7 +147,7 @@ export default function App() {
     setLocationData(location)
   }
 
-  // ── Manager / HQ view ──────────────────────────────────────────────────
+  // ── Manager / Region Mgr / HQ view ─────────────────────────────────────
   if (isAdmin()) {
     const renderTab = () => {
       switch (managerTab) {
