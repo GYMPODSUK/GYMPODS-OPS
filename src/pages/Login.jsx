@@ -3,8 +3,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { VALID_PIN_LENGTHS } from '../lib/permissions'
 
-
-
 export default function Login() {
   const { loginWithPin } = useAuth()
   const [step, setStep] = useState('site')
@@ -36,7 +34,6 @@ export default function Login() {
   // Called automatically at 4/6/8 digit lengths, AND on Enter button.
   const attemptLogin = async (candidate) => {
     if (loading) return
-    // Don't retry the exact same string twice (avoids spam on 4-then-6 typing)
     if (candidate === lastAttemptRef.current) return
     lastAttemptRef.current = candidate
 
@@ -44,11 +41,8 @@ export default function Login() {
     const result = await loginWithPin(candidate, selectedSite.id)
     setLoading(false)
 
-    if (result.success) return // App.jsx will rerender on staff state
+    if (result.success) return
 
-    // Failed. If they're at the max length (8), shake and clear.
-    // If they're at a shorter valid length (4 or 6), let them keep typing
-    // — they might be a Site Mgr or HQ partway through.
     if (candidate.length >= 8) {
       setShake(true)
       setTimeout(() => { setShake(false); setPin(''); lastAttemptRef.current = '' }, 600)
@@ -61,8 +55,6 @@ export default function Login() {
     setError('')
     const next = pin + digit
     setPin(next)
-
-    // Auto-attempt at every valid PIN length boundary
     if (VALID_PIN_LENGTHS.includes(next.length)) {
       await attemptLogin(next)
     }
@@ -71,9 +63,7 @@ export default function Login() {
   const handleBack = () => {
     if (loading) return
     setError('')
-    const next = pin.slice(0, -1)
-    setPin(next)
-    // Clear the last-attempt cache so they can retry as they re-type
+    setPin(p => p.slice(0, -1))
     lastAttemptRef.current = ''
   }
 
@@ -86,15 +76,56 @@ export default function Login() {
 
   const handleEnter = async () => {
     if (loading || pin.length === 0) return
-    // Allow manual submit at any length; useful for ambiguous cases
     if (!VALID_PIN_LENGTHS.includes(pin.length)) {
       setError(`PIN must be ${VALID_PIN_LENGTHS.join(', ')} digits`)
       return
     }
-    // Force the attempt even if we tried this exact string before
     lastAttemptRef.current = ''
     await attemptLogin(pin)
   }
+
+  // Physical keyboard support — only active on the PIN screen.
+  // Touchscreen / on-screen keypad still works exactly as before;
+  // this is purely additive for desktop users.
+  useEffect(() => {
+    if (step !== 'pin') return
+
+    const handleKeyDown = (e) => {
+      if (loading) return
+
+      // Number keys (top row + numpad)
+      if (/^[0-9]$/.test(e.key)) {
+        e.preventDefault()
+        handleDigit(e.key)
+        return
+      }
+
+      // Backspace deletes last digit
+      if (e.key === 'Backspace') {
+        e.preventDefault()
+        handleBack()
+        return
+      }
+
+      // Escape clears all entered digits
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClear()
+        return
+      }
+
+      // Enter submits whatever's been typed so far
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        handleEnter()
+        return
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, pin, loading])
 
   const buttons = ['1','2','3','4','5','6','7','8','9','C','0','⌫']
 
@@ -192,10 +223,6 @@ export default function Login() {
             ))}
           </div>
 
-          {/* Enter button — used when user wants to submit a 6-digit PIN
-              that didn't auto-login (because they hadn't keyed all 8 yet),
-              or for any manual confirmation. Shown only when there's
-              something to submit. */}
           {pin.length > 0 && (
             <button
               onClick={handleEnter}
