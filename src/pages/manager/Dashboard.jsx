@@ -54,6 +54,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     let msgQuery = supabase
       .from('messages').select('id, title, created_at, read_by, staff:staff_id(first_name)')
       .eq('priority', 'urgent')
+      .eq('resolved', false)
       .eq('site_id', staff.active_site_id || staff.site_id)
       .order('created_at', { ascending: false })
       .limit(5)
