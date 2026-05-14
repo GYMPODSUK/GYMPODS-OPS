@@ -35,7 +35,7 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
     cleaner:        'Cleaner',
     foh:            'FOH',
     senior_foh:     'Sr. FOH',
-    admin:          'Manager',
+    admin:          'Site Manager',
     region_manager: 'Region Mgr',
     hq:             'HQ',
   }
