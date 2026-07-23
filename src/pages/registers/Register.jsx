@@ -134,7 +134,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
     return `${Math.floor(hrs / 24)}d ago`
   }
   const formatDate = (ts) => new Date(ts).toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    day: 'numeric', month: 'short', year: 'numeric',
   })
   const statusMeta   = (v) => config.statuses.find(s => s.value === v) || { label: v, color: 'var(--text-light)', bg: 'var(--off-white)' }
   const severityMeta = (v) => SEVERITY_OPTIONS.find(s => s.value === v)
