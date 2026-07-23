@@ -202,8 +202,10 @@ export default function App() {
         <ComposeMessage onClose={() => setComposing(false)} />
       )}
       {showLogs && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'var(--surface)', display: 'flex', flexDirection: 'column' }}>
-          <RegistersHub onExit={() => setShowLogs(false)} />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(13,33,55,0.4)', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 480, height: '100%', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <RegistersHub onExit={() => setShowLogs(false)} />
+          </div>
         </div>
       )}
     </div>
