@@ -97,6 +97,25 @@ export const REGISTERS = {
     ],
   },
 
+  visitors: {
+    key: 'visitors', table: 'visitors', recordType: 'visitor', group: 'Registers',
+    label: 'Visitor Book', singular: 'Visitor', icon: '📖',
+    blurb: 'Sign visitors in, then sign them out when they leave.',
+    hasImages: false, hasSeverity: false, rowPrimary: 'visitor_name',
+    showTimes: true, // sign-in / sign-out show the time of day (this is the point of a visitor book)
+    statuses: [
+      { value: 'on_site',    label: 'On site',    color: 'var(--warning)', bg: 'var(--warning-bg)' },
+      { value: 'signed_out', label: 'Signed out', color: 'var(--success)', bg: 'var(--success-bg)' },
+    ],
+    resolveStatus: 'signed_out', // sign-out stamps resolved_by/resolved_at (= time out)
+    fields: [
+      { name: 'visitor_name', label: 'Visitor name',         type: 'text',     required: true, placeholder: 'Full name' },
+      { name: 'company',      label: 'Company / organisation', type: 'text',   half: true, placeholder: 'Optional' },
+      { name: 'purpose',      label: 'Purpose of visit',     type: 'text',     half: true, placeholder: 'e.g. Contractor' },
+      { name: 'comments',     label: 'Notes',                type: 'textarea', placeholder: 'Anything to note…' },
+    ],
+  },
+
   // ── ENQUIRIES ──────────────────────────────────────────────────
   pt_enquiry: {
     key: 'pt_enquiry', table: 'pt_enquiries', recordType: 'pt_enquiry', group: 'Enquiries',
@@ -144,6 +163,6 @@ export const REGISTERS = {
 
 // Order + grouping for the dropdown.
 export const REGISTER_ORDER = [
-  'complaints', 'lost_found', 'incidents',
+  'complaints', 'lost_found', 'incidents', 'visitors',
   'pt_enquiry', 'pt_client_request', 'tour_enquiry',
 ]
