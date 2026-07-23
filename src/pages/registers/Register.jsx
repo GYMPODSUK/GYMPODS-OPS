@@ -13,7 +13,7 @@ const STORAGE_BUCKET = 'record-images'
 const pad = (n) => String(n).padStart(2, '0')
 const nowLocalInput = () => {
   const d = new Date()
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 const toISO = (localValue) => (localValue ? new Date(localValue).toISOString() : null)
 
@@ -136,6 +136,11 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   const formatDate = (ts) => new Date(ts).toLocaleDateString('en-GB', {
     day: 'numeric', month: 'short', year: 'numeric',
   })
+  const formatDateTime = (ts) => new Date(ts).toLocaleString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  })
+  // Registers with showTimes (Visitor book) display time of day on in/out; others are date-only.
+  const fmt = config.showTimes ? formatDateTime : formatDate
   const statusMeta   = (v) => config.statuses.find(s => s.value === v) || { label: v, color: 'var(--text-light)', bg: 'var(--off-white)' }
   const severityMeta = (v) => SEVERITY_OPTIONS.find(s => s.value === v)
 
@@ -248,7 +253,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
               </div>
 
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                Logged {formatDate(selected.created_at)}
+                {config.showTimes ? 'Signed in' : 'Logged'} {fmt(selected.created_at)}
                 {selected.logged && ` by ${selected.logged.first_name} ${selected.logged.last_name}`}
                 {isHQ() && selected.sites && ` · ${selected.sites.name}`}
               </div>
@@ -299,7 +304,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
               {config.resolveStatus && selected.status === config.resolveStatus && selected.resolved_at && (
                 <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
                   <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-                    ✓ {statusMeta(config.resolveStatus).label} {formatDate(selected.resolved_at)}
+                    ✓ {statusMeta(config.resolveStatus).label} {fmt(selected.resolved_at)}
                     {selected.resolver && ` by ${selected.resolver.first_name} ${selected.resolver.last_name}`}
                   </div>
                 </div>
@@ -429,7 +434,7 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
       )
     }
     if (f.type === 'datetime') {
-      return <input type="datetime-local" className="form-input" value={form[f.name]} onChange={e => setField(f.name, e.target.value)} />
+      return <input type="date" className="form-input" value={form[f.name]} onChange={e => setField(f.name, e.target.value)} />
     }
     if (f.type === 'textarea') {
       return <textarea className="form-input" rows={3} placeholder={f.placeholder || ''} value={form[f.name]} onChange={e => setField(f.name, e.target.value)} />
