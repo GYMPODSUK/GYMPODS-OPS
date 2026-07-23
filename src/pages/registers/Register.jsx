@@ -43,7 +43,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   const loadRecords = async () => {
     setLoading(true)
     // Explicit FK aliases avoid the staff/sites multi-FK embedding gotcha.
-    let select = '*, logged:logged_by ( first_name, last_name ), sites:site_id ( name )'
+    let select = '*, logged:logged_by ( first_name, last_name ), sites:site_id ( name ), actioner:updated_by ( first_name, last_name )'
     if (config.resolveStatus) select += ', resolver:resolved_by ( first_name, last_name )'
 
     let q = supabase.from(config.table).select(select).order('created_at', { ascending: false })
@@ -88,14 +88,17 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   // ── status transitions ────────────────────────────────────────────
   const applyStatus = async (newStatus, extra = {}) => {
     setBusy(true)
-    const update = { status: newStatus, ...extra }
+    const now = new Date().toISOString()
+    // Every status change stamps who did it and when (the "who did and when" log).
+    const update = { status: newStatus, updated_by: staff.id, updated_at: now, ...extra }
     if (config.resolveStatus && newStatus === config.resolveStatus) {
       update.resolved_by = staff.id
-      update.resolved_at = new Date().toISOString()
+      update.resolved_at = now
     }
     const { error } = await supabase.from(config.table).update(update).eq('id', selected.id)
     if (!error) {
-      setSelected(prev => ({ ...prev, ...update }))
+      const me = { first_name: staff.first_name, last_name: staff.last_name }
+      setSelected(prev => ({ ...prev, ...update, actioner: me, ...(update.resolved_by ? { resolver: me } : {}) }))
       setCollectingStatus(null)
       setCollectValue('')
       showToast('Updated ✓')
@@ -226,18 +229,22 @@ export default function Register({ config, onBack, embedded = false, onChanged }
         const sm = statusMeta(selected.status)
         const sev = config.hasSeverity ? severityMeta(selected.severity) : null
         return (
-          <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setSelected(null)}>
-            <div className="modal-sheet" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
-              <div className="modal-handle" />
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 6 }}>
-                <div style={{ fontWeight: 800, fontSize: 16, color: 'var(--navy)', lineHeight: 1.3 }}>
+          <div className="modal-overlay" style={{ alignItems: 'center', padding: 16 }} onClick={e => e.target === e.currentTarget && setSelected(null)}>
+            <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-xl)', margin: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, paddingBottom: 12, marginBottom: 14, borderBottom: '1px solid var(--border)' }}>
+                <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--navy)', lineHeight: 1.3 }}>
                   {config.icon} {config.singular}
                 </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  {sev && <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sev.bg, color: sev.color }}>{sev.label}</span>}
-                  <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sm.bg, color: sm.color }}>{sm.label}</span>
-                </div>
+                <button onClick={() => setSelected(null)} aria-label="Close" style={{
+                  background: 'var(--off-white)', border: 'none', borderRadius: '50%', width: 30, height: 30,
+                  fontSize: 15, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>✕</button>
+              </div>
+
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                {sev && <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sev.bg, color: sev.color }}>{sev.label}</span>}
+                <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: sm.bg, color: sm.color }}>{sm.label}</span>
               </div>
 
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
@@ -254,10 +261,14 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                 if (f.type === 'datetime') display = formatDate(val)
                 else if (f.type === 'select') display = (f.options.find(o => o.value === val)?.label) || val
                 else if (f.type === 'severity') return null // shown as badge above
+                // Make email + phone tappable for quick lead follow-up.
+                let displayNode = <span style={{ whiteSpace: 'pre-wrap' }}>{display}</span>
+                if (f.name === 'email') displayNode = <a href={`mailto:${val}`} style={{ color: 'var(--aqua-dark)', fontWeight: 600 }}>{val}</a>
+                else if (f.name === 'phone') displayNode = <a href={`tel:${val}`} style={{ color: 'var(--aqua-dark)', fontWeight: 600 }}>{val}</a>
                 return (
                   <div key={f.name} style={{ background: 'var(--off-white)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 10 }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</div>
-                    <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{display}</div>
+                    <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>{displayNode}</div>
                   </div>
                 )
               })}
@@ -281,6 +292,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                   <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
                     ✓ {config.promptOnStatus.label}: {selected[config.promptOnStatus.field]}
                     {config.promptOnStatus.timestampField && selected[config.promptOnStatus.timestampField] && ` · ${formatDate(selected[config.promptOnStatus.timestampField])}`}
+                    {selected.actioner && ` · marked by ${selected.actioner.first_name} ${selected.actioner.last_name}`}
                   </div>
                 </div>
               )}
@@ -435,10 +447,16 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-sheet" style={{ maxHeight: '92vh', overflowY: 'auto' }}>
-        <div className="modal-handle" />
-        <div className="modal-title">{config.icon} New {config.singular}</div>
+    <div className="modal-overlay" style={{ alignItems: 'center', padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-xl)', margin: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--navy)' }}>{config.icon} New {config.singular}</div>
+          <button onClick={onClose} aria-label="Close" disabled={saving} style={{
+            background: 'var(--off-white)', border: 'none', borderRadius: '50%', width: 30, height: 30,
+            fontSize: 15, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>✕</button>
+        </div>
 
         {rows.map((row, ri) => (
           <div key={ri} style={row.length === 2 ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 } : {}}>
