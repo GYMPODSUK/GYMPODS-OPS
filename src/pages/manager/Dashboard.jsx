@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import NotesPanel from '../notes/NotesPanel'
 
 export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
@@ -94,6 +95,9 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
       </div>
+
+      {/* Manager-addressed notes */}
+      <NotesPanel siteId={staff.active_site_id || staff.site_id} mode="manager" />
 
       {/* Urgent messages banner */}
       {urgentMessages.length > 0 && (
