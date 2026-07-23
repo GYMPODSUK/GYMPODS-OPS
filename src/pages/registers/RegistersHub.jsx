@@ -49,15 +49,25 @@ export default function RegistersHub({ onExit }) {
           onChange={e => setActive(e.target.value)}
           style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy)' }}
         >
-          {REGISTER_ORDER.map(key => {
-            const cfg = REGISTERS[key]
-            const c = counts[key]
-            return (
-              <option key={key} value={key}>
-                {cfg.icon} {cfg.label}{c ? `  (${c})` : ''}
-              </option>
-            )
-          })}
+          {Object.entries(
+            REGISTER_ORDER.reduce((acc, key) => {
+              const g = REGISTERS[key].group || 'Other'
+              ;(acc[g] = acc[g] || []).push(key)
+              return acc
+            }, {})
+          ).map(([group, keys]) => (
+            <optgroup key={group} label={group}>
+              {keys.map(key => {
+                const cfg = REGISTERS[key]
+                const c = counts[key]
+                return (
+                  <option key={key} value={key}>
+                    {cfg.icon} {cfg.label}{c ? `  (${c})` : ''}
+                  </option>
+                )
+              })}
+            </optgroup>
+          ))}
         </select>
       </div>
 
