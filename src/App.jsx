@@ -185,6 +185,8 @@ export default function App() {
 
   // ── Manager / Region Mgr / HQ view ─────────────────────────────────────
   if (isAdmin()) {
+    const homeTab   = (staff.role === 'hq' || staff.role === 'region_manager') ? 'network' : 'dashboard'
+    const homeLabel = homeTab === 'network' ? 'Network' : 'Home'
     const renderTab = () => {
       switch (managerTab) {
         case 'dashboard': return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
@@ -203,6 +205,13 @@ export default function App() {
       <div className="app-shell">
         <Header staff={staff} onLogout={handleLogout} isFOH={false} />
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {managerTab !== homeTab && (
+            <button onClick={() => setManagerTab(homeTab)} style={{
+              display: 'flex', alignItems: 'center', gap: 4, background: 'var(--white)', border: 'none',
+              borderBottom: '1px solid var(--border)', padding: '10px 16px', fontSize: 13, fontWeight: 700,
+              color: 'var(--navy)', cursor: 'pointer', flexShrink: 0, textAlign: 'left',
+            }}>‹ {homeLabel}</button>
+          )}
           {renderTab()}
         </div>
         <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
