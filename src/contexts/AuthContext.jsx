@@ -4,6 +4,19 @@ import { hasMinRole } from '../lib/permissions'
 
 const AuthContext = createContext(null)
 
+// Roles that must be physically on-site to log in (below manager).
+const FLOOR_ROLES = ['senior_foh', 'foh', 'cleaner', 'trainee']
+
+// Distance between two lat/long points, in metres (haversine).
+function distanceMetres(lat1, lon1, lat2, lon2) {
+  const R = 6371000
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 export function AuthProvider({ children }) {
   const [staff, setStaff] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -28,11 +41,12 @@ export function AuthProvider({ children }) {
    *
    * This is what fixes the Putney 9999 bug.
    */
-  const loginWithPin = async (pin, siteId) => {
-    // 1. Resolve site so we know its region
+  const loginWithPin = async (pin, siteId, opts = {}) => {
+    // opts: { coords: {latitude, longitude}, override: bool }
+    // 1. Resolve site so we know its region + geofence
     const { data: site, error: siteErr } = await supabase
       .from('sites')
-      .select('id, name, address, region_id, regions(name)')
+      .select('id, name, address, region_id, latitude, longitude, geofence_radius, regions(name)')
       .eq('id', siteId)
       .single()
 
@@ -59,6 +73,26 @@ export function AuthProvider({ children }) {
 
     if (!match) {
       return { success: false, error: 'Invalid PIN' }
+    }
+
+    // 3b. Location gate — floor staff must be at the site (managers exempt).
+    //     Skipped entirely if a manager has authorised via override, or if
+    //     the site has no coordinates set (so no one gets locked out).
+    if (FLOOR_ROLES.includes(match.role) && !opts.override) {
+      const hasGeo = site.latitude != null && site.longitude != null
+      if (hasGeo) {
+        if (!opts.coords) {
+          return { success: false, needsLocation: true }
+        }
+        const dist = distanceMetres(
+          opts.coords.latitude, opts.coords.longitude,
+          Number(site.latitude), Number(site.longitude),
+        )
+        const radius = site.geofence_radius || 200
+        if (dist > radius) {
+          return { success: false, offSite: true, distance: Math.round(dist) }
+        }
+      }
     }
 
     // 4. Build session.
@@ -119,6 +153,23 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('gympods_staff')
   }
 
+  /**
+   * Verify that a PIN belongs to a manager-or-above with access to this site.
+   * Used to authorise an off-site floor-staff login (location override).
+   */
+  const verifyManagerPin = async (pin, siteId) => {
+    const { data: site } = await supabase
+      .from('sites').select('id, region_id').eq('id', siteId).single()
+    const { data: matches } = await supabase
+      .from('staff').select('id, role, site_id, region_id').eq('pin', pin).eq('active', true)
+    if (!matches || matches.length === 0) return false
+    return matches.some(m =>
+      m.role === 'hq' ||
+      (m.role === 'region_manager' && m.region_id === site?.region_id) ||
+      (m.role === 'admin' && m.site_id === siteId)
+    )
+  }
+
   // Role helpers
   // NOTE: isAdmin returns true for admin, region_manager, AND hq —
   // so all three see the manager view in App.jsx.
@@ -132,6 +183,7 @@ export function AuthProvider({ children }) {
       staff,
       loading,
       loginWithPin,
+      verifyManagerPin,
       switchSite,
       logout,
       isAdmin,
