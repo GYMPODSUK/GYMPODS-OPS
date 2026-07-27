@@ -167,7 +167,7 @@ export default function App() {
         case 'shifts':    return <ShiftBuilder />
         case 'issues':    return <Issues />
         case 'logs':      return <RegistersHub />
-        case 'network':   return <HQOverview />
+        case 'network':   return <HQOverview onNavigate={setManagerTab} />
         case 'sites':     return <Sites />
         default:          return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
       }
