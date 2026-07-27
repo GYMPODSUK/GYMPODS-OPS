@@ -129,9 +129,6 @@ export default function Issues({ onNavigate }) {
 
         {/* Fixed header */}
         <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '14px 16px 0', flexShrink: 0 }}>
-          {(isHQ() || staff.role === 'region_manager') && (
-            <button className="btn btn-outline btn-sm" onClick={() => onNavigate?.('network')} style={{ marginBottom: 10 }}>‹ Network</button>
-          )}
           <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--navy)', marginBottom: 10 }}>Issues</div>
           <div style={{ display: 'flex', gap: 6, paddingBottom: 12 }}>
             {STATUS_FILTERS.map(f => (
