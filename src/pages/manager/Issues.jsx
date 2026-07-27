@@ -9,7 +9,7 @@ const STATUS_FILTERS = [
   { value: 'all',         label: 'All' },
 ]
 
-export default function Issues() {
+export default function Issues({ onNavigate }) {
   const { staff, isHQ } = useAuth()
   const [issues, setIssues] = useState([])
   const [loading, setLoading] = useState(true)

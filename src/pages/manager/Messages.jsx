@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import NotesPanel from '../notes/NotesPanel'
 
 const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: '#E8301A', bg: 'rgba(232,48,26,0.06)', dot: '#E8301A', border: 'rgba(232,48,26,0.2)' },
@@ -135,7 +136,7 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
   )
 }
 
-export default function Messages() {
+export default function Messages({ onNavigate }) {
   const { staff } = useAuth()
   const [messages, setMessages] = useState([])
   const [loading, setLoading]   = useState(true)
@@ -216,6 +217,8 @@ export default function Messages() {
 
   return (
     <div className="page-content">
+
+      <NotesPanel siteId={scopedSiteId} mode="manager" />
 
       {urgent.length > 0 && (
         <div style={{ marginBottom: 20 }}>

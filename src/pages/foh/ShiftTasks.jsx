@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import NotesPanel from '../notes/NotesPanel'
 
 const CAT_COLORS = {
   cleaning: '#2A8A8E', health_safety: '#C07010',
@@ -162,6 +163,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
 
       {/* Task list */}
       <div className="page-content" style={{ paddingTop: 12 }}>
+        <NotesPanel siteId={staff.site_id} mode="shift" shiftId={shift.id} shiftName={shift.name} />
         {tasks.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>

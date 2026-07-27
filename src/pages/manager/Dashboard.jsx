@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import NotesPanel from '../notes/NotesPanel'
+import SiteTasksModal from '../hq/SiteTasksModal'
 
 export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
   const [stats, setStats] = useState({ completed: 0, flagged: 0, openIssues: 0, inProgress: 0 })
   const [recentIssues, setRecentIssues] = useState([])
+  const [reports, setReports] = useState([])   // open complaints + incidents at this site
   const [shiftSummary, setShiftSummary] = useState([])
   const [urgentMessages, setUrgentMessages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [showTasks, setShowTasks] = useState(false)
   const today = new Date().toISOString().split('T')[0]
+
+  // The site this dashboard is scoped to (the gym you've opened, or your own).
+  const scopedSiteId   = staff.active_site_id || staff.site_id
+  const scopedSiteName = staff.active_site?.name || staff.sites?.name || 'this site'
+  const isRegionMgr    = staff.role === 'region_manager'
 
   useEffect(() => { loadData() }, [])
 
@@ -20,7 +29,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     let compQuery = supabase
       .from('task_completions').select('status, shift_id, shift_definitions(name)')
       .eq('date', today)
-    if (!isHQ()) compQuery = compQuery.eq('site_id', staff.site_id)
+    if (scopedSiteId) compQuery = compQuery.eq('site_id', scopedSiteId)
     const { data: compData } = await compQuery
 
     const completed = compData?.filter(c => c.status === 'completed').length || 0
@@ -33,11 +42,27 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
       .in('status', ['open', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(8)
-    if (!isHQ()) issueQuery = issueQuery.eq('site_id', staff.active_site_id || staff.site_id)
+    if (scopedSiteId) issueQuery = issueQuery.eq('site_id', scopedSiteId)
     const { data: issueData } = await issueQuery
 
     const openIssues = issueData?.filter(i => i.status === 'open').length || 0
     const inProgress = issueData?.filter(i => i.status === 'in_progress').length || 0
+
+    // Open complaints + incidents at this site (shown on Home)
+    let reportsList = []
+    if (scopedSiteId) {
+      const [{ data: cData }, { data: iData }] = await Promise.all([
+        supabase.from('complaints').select('id, description, severity, created_at')
+          .eq('site_id', scopedSiteId).eq('status', 'open').order('created_at', { ascending: false }).limit(10),
+        supabase.from('incidents').select('id, description, severity, created_at')
+          .eq('site_id', scopedSiteId).eq('status', 'open').order('created_at', { ascending: false }).limit(10),
+      ])
+      reportsList = [
+        ...(cData || []).map(c => ({ ...c, kind: 'Complaint' })),
+        ...(iData || []).map(i => ({ ...i, kind: 'Incident' })),
+      ]
+    }
+    setReports(reportsList)
 
     // Shift breakdown
     const shiftMap = {}
@@ -55,7 +80,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
       .from('messages').select('id, title, created_at, read_by, staff:staff_id(first_name)')
       .eq('priority', 'urgent')
       .eq('resolved', false)
-      .eq('site_id', staff.active_site_id || staff.site_id)
+      .eq('site_id', scopedSiteId)
       .order('created_at', { ascending: false })
       .limit(5)
     const { data: msgData } = await msgQuery
@@ -94,6 +119,9 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
         </div>
       </div>
+
+      {/* Manager-addressed notes */}
+      <NotesPanel siteId={staff.active_site_id || staff.site_id} mode="manager" />
 
       {/* Urgent messages banner */}
       {urgentMessages.length > 0 && (
@@ -150,6 +178,40 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           <div className="stat-label">In Prog.</div>
         </button>
       </div>
+
+      {scopedSiteId && (
+        <button className="btn btn-outline btn-sm" onClick={() => setShowTasks(true)} style={{ width: '100%' }}>
+          📋 View today's tasks (done &amp; outstanding)
+        </button>
+      )}
+
+      {reports.length > 0 && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Complaints &amp; incidents</div>
+            <button onClick={() => onNavigate?.('logs')} style={{ fontSize: 12, color: 'var(--aqua)', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer' }}>Open forms ›</button>
+          </div>
+          {reports.map(r => (
+            <button key={r.kind + r.id} onClick={() => onNavigate?.('logs')} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <div className="list-item">
+                <div style={{
+                  width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                  background: r.severity === 'high' ? 'var(--danger)' : r.severity === 'medium' ? 'var(--warning)' : 'var(--text-light)',
+                }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{r.kind}{r.severity ? ` · ${r.severity}` : ''}</div>
+                  {r.description && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.3 }}>
+                      {r.description.length > 60 ? r.description.slice(0, 60) + '…' : r.description}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 16, color: 'var(--text-light)' }}>›</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Shift breakdown */}
       {shiftSummary.length > 0 && (
@@ -219,6 +281,10 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           ))
         )}
       </div>
+
+      {showTasks && scopedSiteId && (
+        <SiteTasksModal site={{ id: scopedSiteId, name: scopedSiteName }} onClose={() => setShowTasks(false)} />
+      )}
     </div>
   )
 }

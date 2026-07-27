@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from './contexts/AuthContext'
+import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import ShiftSelector from './pages/foh/ShiftSelector'
 import ShiftTasks from './pages/foh/ShiftTasks'
@@ -12,6 +13,7 @@ import Issues from './pages/manager/Issues'
 import Messages from './pages/manager/Messages'
 import HQOverview from './pages/hq/Overview'
 import Sites from './pages/hq/Sites'
+import RegistersHub from './pages/registers/RegistersHub'
 
 const Icon = ({ name, size = 22 }) => {
   const icons = {
@@ -21,6 +23,7 @@ const Icon = ({ name, size = 22 }) => {
     shifts:    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
     issues:    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
     messages:  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+    logs:      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>,
     network:   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
     sites:     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
     logout:    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>,
@@ -29,7 +32,7 @@ const Icon = ({ name, size = 22 }) => {
   return icons[name] || null
 }
 
-function Header({ staff, onLogout, onCompose, isFOH }) {
+function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
   const roleLabel = {
     trainee:        'Trainee',
     cleaner:        'Cleaner',
@@ -54,7 +57,7 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
   return (
     <div className="header">
       <div className="header-logo">
-        <div className="header-brand">GYMPODS</div>
+        <div className="header-brand">PODOR</div>
         <div className="header-site">{siteName}</div>
       </div>
       <div className="header-user">
@@ -64,6 +67,11 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
             <span className={`header-role ${roleClass[staff.role] || 'role-foh'}`}>{roleLabel[staff.role] || staff.role}</span>
           </div>
         </div>
+        {isFOH && (
+          <button className="btn-icon" onClick={onLogs} aria-label="Logs">
+            <Icon name="logs" size={20} />
+          </button>
+        )}
         {isFOH && (
           <button className="btn-icon" onClick={onCompose} aria-label="New message"
             style={{ color: '#D8F789' }}>
@@ -78,7 +86,7 @@ function Header({ staff, onLogout, onCompose, isFOH }) {
   )
 }
 
-function ManagerNav({ tab, setTab, isHQ, unreadUrgent }) {
+function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
   const tabs = [
     { id: 'dashboard', label: 'Home',     icon: 'dashboard' },
     { id: 'messages',  label: 'Messages', icon: 'messages'  },
@@ -86,6 +94,7 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent }) {
     { id: 'tasks',     label: 'Tasks',    icon: 'tasks'     },
     { id: 'shifts',    label: 'Shifts',   icon: 'shifts'    },
     { id: 'issues',    label: 'Issues',   icon: 'issues'    },
+    { id: 'logs',      label: 'Forms',    icon: 'logs'      },
     ...(isHQ ? [
       { id: 'network', label: 'Network',  icon: 'network'   },
       { id: 'sites',   label: 'Sites',    icon: 'sites'     },
@@ -105,6 +114,12 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>{unreadUrgent}</span>
           )}
+          {t.id === 'messages' && unreadUrgent === 0 && hasUnread && (
+            <span style={{
+              position: 'absolute', top: 5, right: '50%', transform: 'translateX(9px)',
+              background: '#E8301A', borderRadius: '50%', width: 9, height: 9,
+            }} />
+          )}
           {t.label}
         </button>
       ))}
@@ -121,13 +136,35 @@ export default function App() {
   const defaultTab = (staff?.role === 'hq' || staff?.role === 'region_manager') ? 'network' : 'dashboard'
   const [managerTab, setManagerTab]       = useState(defaultTab)
   const [composing, setComposing]         = useState(false)
+  const [showLogs, setShowLogs]           = useState(false)
   const [unreadUrgent, setUnreadUrgent]   = useState(0)
+  const [hasUnread, setHasUnread]         = useState(false)
+
+  // Red dot on the Messages nav whenever there are unread messages.
+  useEffect(() => {
+    if (!staff || !isAdmin()) { setHasUnread(false); return }
+    const scoped = staff.active_site_id || staff.site_id
+    let alive = true
+    const check = async () => {
+      let q = supabase.from('messages').select('read_by').eq('resolved', false)
+      if (scoped) q = q.eq('site_id', scoped)
+      const { data } = await q
+      if (alive) setHasUnread((data || []).some(m => !m.read_by?.includes(staff.id)))
+    }
+    check()
+    const ch = supabase.channel('nav-unread-messages')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => check())
+      .subscribe()
+    return () => { alive = false; supabase.removeChannel(ch) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staff, managerTab])
 
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="loading-logo">GYMPODS</div>
-        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 4, fontWeight: 600 }}>OPERATIONS</div>
+        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 2, fontWeight: 600 }}>POD Operational Resource</div>
+        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.85)', letterSpacing: 5, fontWeight: 800, marginTop: 2 }}>PODOR</div>
         <div className="spinner" style={{ marginTop: 32 }} />
       </div>
     )
@@ -149,15 +186,18 @@ export default function App() {
 
   // ── Manager / Region Mgr / HQ view ─────────────────────────────────────
   if (isAdmin()) {
+    const homeTab   = (staff.role === 'hq' || staff.role === 'region_manager') ? 'network' : 'dashboard'
+    const homeLabel = homeTab === 'network' ? 'Network' : 'Home'
     const renderTab = () => {
       switch (managerTab) {
         case 'dashboard': return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
-        case 'messages':  return <Messages />
+        case 'messages':  return <Messages onNavigate={setManagerTab} />
         case 'staff':     return <StaffManagement />
         case 'tasks':     return <TaskLibrary />
         case 'shifts':    return <ShiftBuilder />
-        case 'issues':    return <Issues />
-        case 'network':   return <HQOverview />
+        case 'issues':    return <Issues onNavigate={setManagerTab} />
+        case 'logs':      return <RegistersHub />
+        case 'network':   return <HQOverview onNavigate={setManagerTab} />
         case 'sites':     return <Sites />
         default:          return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
       }
@@ -166,9 +206,16 @@ export default function App() {
       <div className="app-shell">
         <Header staff={staff} onLogout={handleLogout} isFOH={false} />
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {managerTab !== homeTab && (
+            <button onClick={() => setManagerTab(homeTab)} style={{
+              display: 'flex', alignItems: 'center', gap: 4, background: 'var(--white)', border: 'none',
+              borderBottom: '1px solid var(--border)', padding: '10px 16px', fontSize: 13, fontWeight: 700,
+              color: 'var(--navy)', cursor: 'pointer', flexShrink: 0, textAlign: 'left',
+            }}>‹ {homeLabel}</button>
+          )}
           {renderTab()}
         </div>
-        <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} />
+        <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
       </div>
     )
   }
@@ -176,7 +223,7 @@ export default function App() {
   // ── FOH view ───────────────────────────────────────────────────────────
   return (
     <div className="app-shell">
-      <Header staff={staff} onLogout={handleLogout} onCompose={() => setComposing(true)} isFOH={true} />
+      <Header staff={staff} onLogout={handleLogout} onCompose={() => setComposing(true)} onLogs={() => setShowLogs(true)} isFOH={true} />
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {selectedShift ? (
           <ShiftTasks
@@ -190,6 +237,13 @@ export default function App() {
       </div>
       {composing && (
         <ComposeMessage onClose={() => setComposing(false)} />
+      )}
+      {showLogs && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(13,33,55,0.4)', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 480, height: '100%', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <RegistersHub onExit={() => setShowLogs(false)} />
+          </div>
+        </div>
       )}
     </div>
   )

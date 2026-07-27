@@ -144,8 +144,11 @@ export default function Login() {
         <div style={{ fontSize: '32px', fontWeight: '800', color: 'var(--aqua)', letterSpacing: '2px' }}>
           GYMPODS
         </div>
-        <div style={{ fontSize: '12px', fontWeight: '700', color: 'rgba(127,192,195,0.5)', letterSpacing: '4px', marginTop: '4px' }}>
-          OPERATIONS
+        <div style={{ fontSize: '11px', fontWeight: '600', color: 'rgba(127,192,195,0.5)', letterSpacing: '2px', marginTop: '6px' }}>
+          POD Operational Resource
+        </div>
+        <div style={{ fontSize: '16px', fontWeight: '800', color: 'rgba(255,255,255,0.9)', letterSpacing: '6px', marginTop: '2px' }}>
+          PODOR
         </div>
       </div>
 
