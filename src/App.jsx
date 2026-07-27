@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuth } from './contexts/AuthContext'
+import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import ShiftSelector from './pages/foh/ShiftSelector'
 import ShiftTasks from './pages/foh/ShiftTasks'
@@ -85,7 +86,7 @@ function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
   )
 }
 
-function ManagerNav({ tab, setTab, isHQ, unreadUrgent }) {
+function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
   const tabs = [
     { id: 'dashboard', label: 'Home',     icon: 'dashboard' },
     { id: 'messages',  label: 'Messages', icon: 'messages'  },
@@ -113,6 +114,12 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>{unreadUrgent}</span>
           )}
+          {t.id === 'messages' && unreadUrgent === 0 && hasUnread && (
+            <span style={{
+              position: 'absolute', top: 5, right: '50%', transform: 'translateX(9px)',
+              background: '#E8301A', borderRadius: '50%', width: 9, height: 9,
+            }} />
+          )}
           {t.label}
         </button>
       ))}
@@ -131,6 +138,26 @@ export default function App() {
   const [composing, setComposing]         = useState(false)
   const [showLogs, setShowLogs]           = useState(false)
   const [unreadUrgent, setUnreadUrgent]   = useState(0)
+  const [hasUnread, setHasUnread]         = useState(false)
+
+  // Red dot on the Messages nav whenever there are unread messages.
+  useEffect(() => {
+    if (!staff || !isAdmin()) { setHasUnread(false); return }
+    const scoped = staff.active_site_id || staff.site_id
+    let alive = true
+    const check = async () => {
+      let q = supabase.from('messages').select('read_by').eq('resolved', false)
+      if (scoped) q = q.eq('site_id', scoped)
+      const { data } = await q
+      if (alive) setHasUnread((data || []).some(m => !m.read_by?.includes(staff.id)))
+    }
+    check()
+    const ch = supabase.channel('nav-unread-messages')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => check())
+      .subscribe()
+    return () => { alive = false; supabase.removeChannel(ch) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staff, managerTab])
 
   if (loading) {
     return (
@@ -161,11 +188,11 @@ export default function App() {
     const renderTab = () => {
       switch (managerTab) {
         case 'dashboard': return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
-        case 'messages':  return <Messages />
+        case 'messages':  return <Messages onNavigate={setManagerTab} />
         case 'staff':     return <StaffManagement />
         case 'tasks':     return <TaskLibrary />
         case 'shifts':    return <ShiftBuilder />
-        case 'issues':    return <Issues />
+        case 'issues':    return <Issues onNavigate={setManagerTab} />
         case 'logs':      return <RegistersHub />
         case 'network':   return <HQOverview onNavigate={setManagerTab} />
         case 'sites':     return <Sites />
@@ -178,7 +205,7 @@ export default function App() {
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {renderTab()}
         </div>
-        <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} />
+        <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
       </div>
     )
   }
