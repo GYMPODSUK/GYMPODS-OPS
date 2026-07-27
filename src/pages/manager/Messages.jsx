@@ -218,10 +218,6 @@ export default function Messages({ onNavigate }) {
   return (
     <div className="page-content">
 
-      {(staff.role === 'hq' || staff.role === 'region_manager') && (
-        <button className="btn btn-outline btn-sm" onClick={() => onNavigate?.('network')} style={{ alignSelf: 'flex-start' }}>‹ Network</button>
-      )}
-
       <NotesPanel siteId={scopedSiteId} mode="manager" />
 
       {urgent.length > 0 && (
