@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLES } from '../../lib/permissions'
+import SiteTasksModal from './SiteTasksModal'
 
 export default function HQOverview() {
   const { staff, switchSite } = useAuth()
@@ -13,6 +14,7 @@ export default function HQOverview() {
   const [siteStats, setSiteStats] = useState({})
   const [urgentMessages, setUrgentMessages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [tasksSite, setTasksSite] = useState(null)   // site whose task drill-down is open
   const today = new Date().toISOString().split('T')[0]
 
   // Load sites + regions + per-site stats.
@@ -31,13 +33,22 @@ export default function HQOverview() {
     if (siteData?.length) {
       const stats = {}
       for (const site of siteData) {
-        const [{ data: comp }, { data: issues }, { data: urgent }, { data: shiftTasks }] = await Promise.all([
+        const [
+          { data: comp }, { data: issues }, { data: urgent }, { data: shiftTasks },
+          { count: complaintsCount }, { count: incidentsCount }, { count: lostFoundCount },
+          { count: visitorsCount }, { count: notesCount },
+        ] = await Promise.all([
           supabase.from('task_completions').select('status').eq('site_id', site.id).eq('date', today),
           supabase.from('issues').select('id').eq('site_id', site.id).eq('status', 'open'),
           supabase.from('messages').select('id').eq('site_id', site.id)
             .eq('priority', 'urgent').eq('resolved', false),
           supabase.from('shift_tasks').select('id, shift_definitions!inner(site_id)')
             .eq('shift_definitions.site_id', site.id),
+          supabase.from('complaints').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'open'),
+          supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'open'),
+          supabase.from('lost_found').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'unclaimed'),
+          supabase.from('visitors').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'on_site'),
+          supabase.from('notes').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'open'),
         ])
         stats[site.id] = {
           completed:  comp?.filter(c => c.status === 'completed').length || 0,
@@ -45,6 +56,11 @@ export default function HQOverview() {
           openIssues: issues?.length || 0,
           urgent:     urgent?.length || 0,
           totalTasks: shiftTasks?.length || 0,
+          complaints: complaintsCount || 0,
+          incidents:  incidentsCount || 0,
+          lostFound:  lostFoundCount || 0,
+          visitors:   visitorsCount || 0,
+          notes:      notesCount || 0,
         }
       }
       setSiteStats(stats)
@@ -91,6 +107,11 @@ export default function HQOverview() {
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'messages' },
         () => { loadAll(); loadUrgentMessages() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' },  () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lost_found' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visitors' },   () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notes' },      () => loadAll())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [loadAll, loadUrgentMessages])
@@ -188,7 +209,7 @@ export default function HQOverview() {
             </span>
           </div>
           {region.sites.map(site => (
-            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} />
+            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} />
           ))}
         </div>
       ))}
@@ -200,7 +221,7 @@ export default function HQOverview() {
             textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10,
           }}>Unassigned</div>
           {unassigned.map(site => (
-            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} />
+            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} />
           ))}
         </div>
       )}
@@ -216,22 +237,34 @@ export default function HQOverview() {
           </div>
         </div>
       )}
+
+      {tasksSite && <SiteTasksModal site={tasksSite} onClose={() => setTasksSite(null)} />}
     </div>
   )
 }
 
-function SiteCard({ site, stats, onOpen }) {
+function SiteCard({ site, stats, onOpen, onViewTasks }) {
   const s = stats
   const total = (s.completed || 0) + (s.flagged || 0)
   const pct = s.totalTasks > 0 ? Math.round((total / s.totalTasks) * 100) : 0
   const hasUrgent = (s.urgent || 0) > 0
 
+  // Live "needs attention" signals — only non-zero ones are shown.
+  const chips = [
+    { n: s.openIssues, label: 'Issues',       color: 'var(--danger)',    bg: 'var(--danger-bg)'  },
+    { n: s.complaints, label: 'Complaints',   color: 'var(--danger)',    bg: 'var(--danger-bg)'  },
+    { n: s.incidents,  label: 'Incidents',    color: 'var(--warning)',   bg: 'var(--warning-bg)' },
+    { n: s.flagged,    label: 'Flagged',      color: 'var(--warning)',   bg: 'var(--warning-bg)' },
+    { n: s.lostFound,  label: 'Lost & Found', color: 'var(--warning)',   bg: 'var(--warning-bg)' },
+    { n: s.notes,      label: 'Notes',        color: 'var(--navy)',      bg: 'var(--aqua-light)' },
+    { n: s.visitors,   label: 'On site',      color: 'var(--aqua-dark)', bg: 'var(--aqua-light)' },
+  ].filter(c => (c.n || 0) > 0)
+
   return (
-    <button
-      onClick={() => onOpen(site.id)}
+    <div
       className="site-overview-card"
       style={{
-        width: '100%', textAlign: 'left', cursor: 'pointer',
+        width: '100%', textAlign: 'left',
         border: hasUrgent ? '1px solid rgba(232,48,26,0.3)' : undefined,
         background: hasUrgent ? 'rgba(232,48,26,0.03)' : undefined,
       }}
@@ -252,26 +285,47 @@ function SiteCard({ site, stats, onOpen }) {
           {site.address}
         </div>
       )}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 12 }}>
-        <div className="stat-card">
-          <div className="stat-number" style={{ fontSize: 20, color: 'var(--success)' }}>{s.completed || 0}</div>
-          <div className="stat-label">Done</div>
+
+      {/* Attention chips */}
+      {chips.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {chips.map(c => (
+            <span key={c.label} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: c.bg, color: c.color, fontWeight: 700, fontSize: 12,
+              padding: '4px 10px', borderRadius: 20,
+            }}>
+              <span style={{
+                background: c.color, color: '#fff', borderRadius: 10, minWidth: 16,
+                height: 16, padding: '0 4px', fontSize: 11, display: 'inline-flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>{c.n}</span>
+              {c.label}
+            </span>
+          ))}
         </div>
-        <div className="stat-card">
-          <div className="stat-number" style={{ fontSize: 20, color: 'var(--danger)' }}>{s.flagged || 0}</div>
-          <div className="stat-label">Flagged</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-number" style={{ fontSize: 20, color: 'var(--warning)' }}>{s.openIssues || 0}</div>
-          <div className="stat-label">Issues</div>
-        </div>
-      </div>
+      ) : (
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 12,
+          color: 'var(--success)', fontWeight: 700, fontSize: 13,
+        }}>✓ All clear</div>
+      )}
+
       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-        {total} of {s.totalTasks || 0} total tasks completed today ({pct}%)
+        {total} of {s.totalTasks || 0} tasks completed today ({pct}%)
       </div>
       <div className="progress-bar">
         <div className="progress-fill" style={{ width: `${pct}%` }} />
       </div>
-    </button>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => onViewTasks(site)}>
+          Today's tasks
+        </button>
+        <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => onOpen(site.id)}>
+          Open site ›
+        </button>
+      </div>
+    </div>
   )
 }
