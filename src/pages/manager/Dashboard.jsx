@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
+import SiteTasksModal from '../hq/SiteTasksModal'
 
 export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
@@ -10,7 +11,13 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const [shiftSummary, setShiftSummary] = useState([])
   const [urgentMessages, setUrgentMessages] = useState([])
   const [loading, setLoading] = useState(true)
+  const [showTasks, setShowTasks] = useState(false)
   const today = new Date().toISOString().split('T')[0]
+
+  // The site this dashboard is scoped to (the gym you've opened, or your own).
+  const scopedSiteId   = staff.active_site_id || staff.site_id
+  const scopedSiteName = staff.active_site?.name || staff.sites?.name || 'this site'
+  const isRegionMgr    = staff.role === 'region_manager'
 
   useEffect(() => { loadData() }, [])
 
@@ -21,7 +28,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     let compQuery = supabase
       .from('task_completions').select('status, shift_id, shift_definitions(name)')
       .eq('date', today)
-    if (!isHQ()) compQuery = compQuery.eq('site_id', staff.site_id)
+    if (scopedSiteId) compQuery = compQuery.eq('site_id', scopedSiteId)
     const { data: compData } = await compQuery
 
     const completed = compData?.filter(c => c.status === 'completed').length || 0
@@ -34,7 +41,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
       .in('status', ['open', 'in_progress'])
       .order('created_at', { ascending: false })
       .limit(8)
-    if (!isHQ()) issueQuery = issueQuery.eq('site_id', staff.active_site_id || staff.site_id)
+    if (scopedSiteId) issueQuery = issueQuery.eq('site_id', scopedSiteId)
     const { data: issueData } = await issueQuery
 
     const openIssues = issueData?.filter(i => i.status === 'open').length || 0
@@ -56,7 +63,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
       .from('messages').select('id, title, created_at, read_by, staff:staff_id(first_name)')
       .eq('priority', 'urgent')
       .eq('resolved', false)
-      .eq('site_id', staff.active_site_id || staff.site_id)
+      .eq('site_id', scopedSiteId)
       .order('created_at', { ascending: false })
       .limit(5)
     const { data: msgData } = await msgQuery
@@ -88,6 +95,10 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
 
   return (
     <div className="page-content">
+      {(isHQ() || isRegionMgr) && (
+        <button className="btn btn-outline btn-sm" onClick={() => onNavigate?.('network')}
+          style={{ alignSelf: 'flex-start' }}>‹ Network</button>
+      )}
       {/* Date heading */}
       <div>
         <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--navy)' }}>Today's Overview</div>
@@ -154,6 +165,12 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           <div className="stat-label">In Prog.</div>
         </button>
       </div>
+
+      {scopedSiteId && (
+        <button className="btn btn-outline btn-sm" onClick={() => setShowTasks(true)} style={{ width: '100%' }}>
+          📋 View today's tasks (done &amp; outstanding)
+        </button>
+      )}
 
       {/* Shift breakdown */}
       {shiftSummary.length > 0 && (
@@ -223,6 +240,10 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
           ))
         )}
       </div>
+
+      {showTasks && scopedSiteId && (
+        <SiteTasksModal site={{ id: scopedSiteId, name: scopedSiteName }} onClose={() => setShowTasks(false)} />
+      )}
     </div>
   )
 }
