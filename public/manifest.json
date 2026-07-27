@@ -1,7 +1,7 @@
 {
-  "name": "GYMPODS OPS",
-  "short_name": "GYMPODS OPS",
-  "description": "GYMPODS Operations & Compliance App",
+  "name": "PODOR",
+  "short_name": "PODOR",
+  "description": "PODOR — POD Operational Resource (GYMPODS)",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#7FC0C3",
