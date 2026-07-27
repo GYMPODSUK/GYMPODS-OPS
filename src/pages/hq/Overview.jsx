@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { ROLES } from '../../lib/permissions'
 import SiteTasksModal from './SiteTasksModal'
 
-export default function HQOverview() {
+export default function HQOverview({ onNavigate }) {
   const { staff, switchSite } = useAuth()
   const isRegionMgr = staff?.role === ROLES.REGION_MANAGER
   const myRegionId  = staff?.region_id || null
@@ -118,6 +118,7 @@ export default function HQOverview() {
 
   const handleOpenSite = async (siteId) => {
     await switchSite(siteId)
+    onNavigate?.('dashboard')   // drop into that gym's Home
   }
 
   if (loading) return (
