@@ -136,7 +136,7 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
   )
 }
 
-export default function Messages() {
+export default function Messages({ onNavigate }) {
   const { staff } = useAuth()
   const [messages, setMessages] = useState([])
   const [loading, setLoading]   = useState(true)
@@ -217,6 +217,10 @@ export default function Messages() {
 
   return (
     <div className="page-content">
+
+      {(staff.role === 'hq' || staff.role === 'region_manager') && (
+        <button className="btn btn-outline btn-sm" onClick={() => onNavigate?.('network')} style={{ alignSelf: 'flex-start' }}>‹ Network</button>
+      )}
 
       <NotesPanel siteId={scopedSiteId} mode="manager" />
 
