@@ -8,6 +8,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
   const [stats, setStats] = useState({ completed: 0, flagged: 0, openIssues: 0, inProgress: 0 })
   const [recentIssues, setRecentIssues] = useState([])
+  const [reports, setReports] = useState([])   // open complaints + incidents at this site
   const [shiftSummary, setShiftSummary] = useState([])
   const [urgentMessages, setUrgentMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -46,6 +47,22 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
 
     const openIssues = issueData?.filter(i => i.status === 'open').length || 0
     const inProgress = issueData?.filter(i => i.status === 'in_progress').length || 0
+
+    // Open complaints + incidents at this site (shown on Home)
+    let reportsList = []
+    if (scopedSiteId) {
+      const [{ data: cData }, { data: iData }] = await Promise.all([
+        supabase.from('complaints').select('id, description, severity, created_at')
+          .eq('site_id', scopedSiteId).eq('status', 'open').order('created_at', { ascending: false }).limit(10),
+        supabase.from('incidents').select('id, description, severity, created_at')
+          .eq('site_id', scopedSiteId).eq('status', 'open').order('created_at', { ascending: false }).limit(10),
+      ])
+      reportsList = [
+        ...(cData || []).map(c => ({ ...c, kind: 'Complaint' })),
+        ...(iData || []).map(i => ({ ...i, kind: 'Incident' })),
+      ]
+    }
+    setReports(reportsList)
 
     // Shift breakdown
     const shiftMap = {}
@@ -95,10 +112,6 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
 
   return (
     <div className="page-content">
-      {(isHQ() || isRegionMgr) && (
-        <button className="btn btn-outline btn-sm" onClick={() => onNavigate?.('network')}
-          style={{ alignSelf: 'flex-start' }}>‹ Network</button>
-      )}
       {/* Date heading */}
       <div>
         <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--navy)' }}>Today's Overview</div>
@@ -170,6 +183,34 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
         <button className="btn btn-outline btn-sm" onClick={() => setShowTasks(true)} style={{ width: '100%' }}>
           📋 View today's tasks (done &amp; outstanding)
         </button>
+      )}
+
+      {reports.length > 0 && (
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="card-title" style={{ marginBottom: 0 }}>Complaints &amp; incidents</div>
+            <button onClick={() => onNavigate?.('logs')} style={{ fontSize: 12, color: 'var(--aqua)', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer' }}>Open forms ›</button>
+          </div>
+          {reports.map(r => (
+            <button key={r.kind + r.id} onClick={() => onNavigate?.('logs')} style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+              <div className="list-item">
+                <div style={{
+                  width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+                  background: r.severity === 'high' ? 'var(--danger)' : r.severity === 'medium' ? 'var(--warning)' : 'var(--text-light)',
+                }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{r.kind}{r.severity ? ` · ${r.severity}` : ''}</div>
+                  {r.description && (
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.3 }}>
+                      {r.description.length > 60 ? r.description.slice(0, 60) + '…' : r.description}
+                    </div>
+                  )}
+                </div>
+                <span style={{ fontSize: 16, color: 'var(--text-light)' }}>›</span>
+              </div>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* Shift breakdown */}
