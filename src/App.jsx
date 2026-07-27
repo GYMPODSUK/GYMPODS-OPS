@@ -57,7 +57,7 @@ function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
   return (
     <div className="header">
       <div className="header-logo">
-        <div className="header-brand">GYMPODS</div>
+        <div className="header-brand">PODOR</div>
         <div className="header-site">{siteName}</div>
       </div>
       <div className="header-user">
@@ -163,7 +163,8 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div className="loading-logo">GYMPODS</div>
-        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 4, fontWeight: 600 }}>OPERATIONS</div>
+        <div style={{ fontSize: 11, color: 'rgba(127,192,195,0.4)', letterSpacing: 2, fontWeight: 600 }}>POD Operational Resource</div>
+        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.85)', letterSpacing: 5, fontWeight: 800, marginTop: 2 }}>PODOR</div>
         <div className="spinner" style={{ marginTop: 32 }} />
       </div>
     )
