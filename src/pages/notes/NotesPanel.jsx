@@ -23,8 +23,11 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
       .select('*, author:author_id ( first_name, last_name ), shift:target_shift_id ( name )')
       .eq('site_id', siteId).eq('status', 'open')
       .order('created_at', { ascending: false })
-    if (mode === 'shift') q = q.eq('target_type', 'shift').eq('target_shift_id', shiftId)
-    else                  q = q.eq('target_type', 'manager')
+    // mode 'shift'   → just this shift's notes (FOH shift screen)
+    // mode 'manager'  → only notes addressed to managers
+    // mode 'all'      → every open note at this gym, labelled by who it's for
+    if (mode === 'shift')        q = q.eq('target_type', 'shift').eq('target_shift_id', shiftId)
+    else if (mode === 'manager') q = q.eq('target_type', 'manager')
     const { data, error } = await q
     if (error) console.error('notes query error:', error)
     setNotes(data || [])
@@ -68,7 +71,13 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
     return `${Math.floor(hrs / 24)}d ago`
   }
 
-  const heading = mode === 'shift' ? '📌 Shift notes' : '📌 Notes for managers'
+  const heading = mode === 'shift' ? '📌 Shift notes'
+    : mode === 'all' ? '📌 Open notes'
+    : '📌 Notes for managers'
+
+  // Who a note is addressed to — only worth showing when the panel mixes types.
+  const targetLabel = (n) =>
+    n.target_type === 'shift' ? `for ${n.shift?.name || 'a shift'}` : 'for managers'
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -87,7 +96,7 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
           <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{n.body}</div>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
             {n.author ? `${n.author.first_name} ${n.author.last_name}` : '—'}
-            {mode === 'manager' && n.shift && ` · for ${n.shift.name}`}
+            {mode !== 'shift' && ` · ${targetLabel(n)}`}
             {' · '}{timeAgo(n.created_at)}
           </div>
           <button className="btn btn-success btn-sm" style={{ width: '100%', marginTop: 10 }}
