@@ -121,6 +121,14 @@ export default function HQOverview({ onNavigate }) {
     onNavigate?.('dashboard')   // drop into that gym's Home
   }
 
+  // Tapping an attention chip switches into that gym and opens the exact
+  // place the number came from (register, issues list, notes or task list).
+  const handleChip = async (site, dest) => {
+    if (dest.modal === 'tasks') { setTasksSite(site); return }
+    await switchSite(site.id)
+    onNavigate?.(dest.tab, dest.key)
+  }
+
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
       <div className="spinner" />
@@ -210,7 +218,7 @@ export default function HQOverview({ onNavigate }) {
             </span>
           </div>
           {region.sites.map(site => (
-            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} />
+            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} onChip={handleChip} />
           ))}
         </div>
       ))}
@@ -222,7 +230,7 @@ export default function HQOverview({ onNavigate }) {
             textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 10,
           }}>Unassigned</div>
           {unassigned.map(site => (
-            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} />
+            <SiteCard key={site.id} site={site} stats={siteStats[site.id] || {}} onOpen={handleOpenSite} onViewTasks={setTasksSite} onChip={handleChip} />
           ))}
         </div>
       )}
@@ -244,21 +252,22 @@ export default function HQOverview({ onNavigate }) {
   )
 }
 
-function SiteCard({ site, stats, onOpen, onViewTasks }) {
+function SiteCard({ site, stats, onOpen, onViewTasks, onChip }) {
   const s = stats
   const total = (s.completed || 0) + (s.flagged || 0)
   const pct = s.totalTasks > 0 ? Math.round((total / s.totalTasks) * 100) : 0
   const hasUrgent = (s.urgent || 0) > 0
 
   // Live "needs attention" signals — only non-zero ones are shown.
+  // Each chip is tappable and deep-links to wherever that number lives.
   const chips = [
-    { n: s.openIssues, label: 'Issues',       color: 'var(--danger)',    bg: 'var(--danger-bg)'  },
-    { n: s.complaints, label: 'Complaints',   color: 'var(--danger)',    bg: 'var(--danger-bg)'  },
-    { n: s.incidents,  label: 'Incidents',    color: 'var(--warning)',   bg: 'var(--warning-bg)' },
-    { n: s.flagged,    label: 'Flagged',      color: 'var(--warning)',   bg: 'var(--warning-bg)' },
-    { n: s.lostFound,  label: 'Lost & Found', color: 'var(--warning)',   bg: 'var(--warning-bg)' },
-    { n: s.notes,      label: 'Notes',        color: 'var(--navy)',      bg: 'var(--aqua-light)' },
-    { n: s.visitors,   label: 'On site',      color: 'var(--aqua-dark)', bg: 'var(--aqua-light)' },
+    { n: s.openIssues, label: 'Issues',       color: 'var(--danger)',    bg: 'var(--danger-bg)',  dest: { tab: 'issues' } },
+    { n: s.complaints, label: 'Complaints',   color: 'var(--danger)',    bg: 'var(--danger-bg)',  dest: { tab: 'logs', key: 'complaints' } },
+    { n: s.incidents,  label: 'Incidents',    color: 'var(--warning)',   bg: 'var(--warning-bg)', dest: { tab: 'logs', key: 'incidents' } },
+    { n: s.flagged,    label: 'Flagged',      color: 'var(--warning)',   bg: 'var(--warning-bg)', dest: { modal: 'tasks' } },
+    { n: s.lostFound,  label: 'Lost & Found', color: 'var(--warning)',   bg: 'var(--warning-bg)', dest: { tab: 'logs', key: 'lost_found' } },
+    { n: s.notes,      label: 'Notes',        color: 'var(--navy)',      bg: 'var(--aqua-light)', dest: { tab: 'dashboard' } },
+    { n: s.visitors,   label: 'On site',      color: 'var(--aqua-dark)', bg: 'var(--aqua-light)', dest: { tab: 'logs', key: 'visitors' } },
   ].filter(c => (c.n || 0) > 0)
 
   return (
@@ -291,10 +300,11 @@ function SiteCard({ site, stats, onOpen, onViewTasks }) {
       {chips.length > 0 ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
           {chips.map(c => (
-            <span key={c.label} style={{
+            <button key={c.label} onClick={() => onChip?.(site, c.dest)} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               background: c.bg, color: c.color, fontWeight: 700, fontSize: 12,
-              padding: '4px 10px', borderRadius: 20,
+              padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+              border: `1px solid ${c.color}33`,
             }}>
               <span style={{
                 background: c.color, color: '#fff', borderRadius: 10, minWidth: 16,
@@ -302,7 +312,8 @@ function SiteCard({ site, stats, onOpen, onViewTasks }) {
                 alignItems: 'center', justifyContent: 'center',
               }}>{c.n}</span>
               {c.label}
-            </span>
+              <span style={{ opacity: 0.5, fontSize: 13, marginLeft: 1 }}>›</span>
+            </button>
           ))}
         </div>
       ) : (
