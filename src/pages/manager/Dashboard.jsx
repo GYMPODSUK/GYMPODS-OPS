@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
 import SiteTasksModal from '../hq/SiteTasksModal'
+import { shiftsRunningOn } from '../../lib/schedule'
 
 export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
@@ -84,20 +85,26 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     // Network card shows, scoped to this one gym.
     let extra = { totalTasks: 0, complaints: 0, incidents: 0, lostFound: 0, visitors: 0 }
     if (scopedSiteId) {
+      // Today's task total = tasks on the shifts that actually run today.
+      const { data: shiftDefs } = await supabase
+        .from('shift_definitions').select('id, days_of_week').eq('site_id', scopedSiteId)
+      const todayShiftIds = shiftsRunningOn(shiftDefs).map(sd => sd.id)
+      const { count: todayTaskCount } = todayShiftIds.length
+        ? await supabase.from('shift_tasks').select('id', { count: 'exact', head: true })
+            .in('shift_id', todayShiftIds)
+        : { count: 0 }
+
       const [
-        { data: shiftTasks },
         { count: complaintsCount }, { count: incidentsCount },
         { count: lostFoundCount }, { count: visitorsCount },
       ] = await Promise.all([
-        supabase.from('shift_tasks').select('id, shift_definitions!inner(site_id)')
-          .eq('shift_definitions.site_id', scopedSiteId),
         supabase.from('complaints').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'open'),
         supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'open'),
         supabase.from('lost_found').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'unclaimed'),
         supabase.from('visitors').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'on_site'),
       ])
       extra = {
-        totalTasks: shiftTasks?.length || 0,
+        totalTasks: todayTaskCount || 0,
         complaints: complaintsCount || 0,
         incidents:  incidentsCount  || 0,
         lostFound:  lostFoundCount  || 0,
