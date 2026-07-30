@@ -257,17 +257,27 @@ export default function Login() {
                 <div style={{ fontSize: '13px', color: overrideMode ? 'var(--aqua)' : 'rgba(255,255,255,0.4)', fontWeight: overrideMode ? 700 : 500, textAlign: 'center' }}>
                   {overrideMode ? 'Manager override — enter a manager PIN to allow this login' : 'Enter your PIN'}
                 </div>
-                <div style={{ display: 'flex', gap: '12px', animation: shake ? 'shake 0.5s ease' : 'none' }}>
+                {/* Fixed-height row so growing from 4 to 6 to 8 dots never
+                    moves the keypad below it. */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                  height: '16px', animation: shake ? 'shake 0.5s ease' : 'none',
+                }}>
                   {Array.from({ length: dotCount }).map((_, i) => (
                     <div key={i} style={{
-                      width: '14px', height: '14px', borderRadius: '50%',
+                      width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0,
                       background: i < activePin.length ? 'var(--aqua)' : 'rgba(255,255,255,0.15)',
                       transition: 'background 0.15s',
                       transform: i < activePin.length ? 'scale(1.1)' : 'scale(1)'
                     }} />
                   ))}
                 </div>
-                {(error || overrideError) && <div style={{ fontSize: '13px', color: '#FF8080', fontWeight: '500' }}>{overrideMode ? overrideError : error}</div>}
+                {/* Always rendered — holds its line whether or not there's an
+                    error, so the keypad doesn't shift on a wrong PIN. */}
+                <div style={{
+                  fontSize: '13px', color: '#FF8080', fontWeight: '500',
+                  minHeight: '17px', lineHeight: '17px', textAlign: 'center',
+                }}>{(overrideMode ? overrideError : error) || '\u00a0'}</div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', width: '100%', maxWidth: '280px' }}>
@@ -290,11 +300,14 @@ export default function Login() {
                 ))}
               </div>
 
-              {activePin.length > 0 && (
-                <button
+              {/* Always in the layout — hidden, not unmounted, so pressing the
+                  first digit doesn't shove the keypad upwards. */}
+              <button
                   onClick={handleEnter}
-                  disabled={loading}
+                  disabled={loading || activePin.length === 0}
                   style={{
+                    visibility: activePin.length > 0 ? 'visible' : 'hidden',
+                    pointerEvents: activePin.length > 0 ? 'auto' : 'none',
                     width: '100%', maxWidth: '280px',
                     padding: '14px', borderRadius: '14px',
                     background: (overrideMode ? [6,8].includes(overridePin.length) : VALID_PIN_LENGTHS.includes(pin.length)) ? 'var(--aqua)' : 'rgba(127,192,195,0.2)',
@@ -307,8 +320,7 @@ export default function Login() {
                   }}
                 >
                   {loading ? '···' : overrideMode ? 'Authorise' : 'Enter'}
-                </button>
-              )}
+              </button>
 
               {overrideMode && (
                 <button onClick={() => { setOverrideMode(false); setOverridePin(''); setOverrideError('') }} style={{
