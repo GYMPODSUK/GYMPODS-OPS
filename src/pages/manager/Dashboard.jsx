@@ -6,7 +6,10 @@ import SiteTasksModal from '../hq/SiteTasksModal'
 
 export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const { staff, isHQ } = useAuth()
-  const [stats, setStats] = useState({ completed: 0, flagged: 0, openIssues: 0, inProgress: 0 })
+  const [stats, setStats] = useState({
+    completed: 0, flagged: 0, openIssues: 0, inProgress: 0, totalTasks: 0,
+    complaints: 0, incidents: 0, lostFound: 0, visitors: 0,
+  })
   const [recentIssues, setRecentIssues] = useState([])
   const [reports, setReports] = useState([])   // open complaints + incidents at this site
   const [shiftSummary, setShiftSummary] = useState([])
@@ -20,7 +23,20 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
   const scopedSiteName = staff.active_site?.name || staff.sites?.name || 'this site'
   const isRegionMgr    = staff.role === 'region_manager'
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scopedSiteId])
+
+  // Keep Home live the same way the Network view is, so a manager sees new
+  // items land without pulling to refresh.
+  useEffect(() => {
+    if (!scopedSiteId) return
+    const channel = supabase.channel(`home-live-${scopedSiteId}`)
+    for (const table of ['issues', 'task_completions', 'messages', 'complaints', 'incidents', 'lost_found', 'visitors', 'notes']) {
+      channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => loadData())
+    }
+    channel.subscribe()
+    return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopedSiteId])
 
   const loadData = async () => {
     setLoading(true)
@@ -64,6 +80,31 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     }
     setReports(reportsList)
 
+    // Attention counts + today's task total — the same signals the HQ
+    // Network card shows, scoped to this one gym.
+    let extra = { totalTasks: 0, complaints: 0, incidents: 0, lostFound: 0, visitors: 0 }
+    if (scopedSiteId) {
+      const [
+        { data: shiftTasks },
+        { count: complaintsCount }, { count: incidentsCount },
+        { count: lostFoundCount }, { count: visitorsCount },
+      ] = await Promise.all([
+        supabase.from('shift_tasks').select('id, shift_definitions!inner(site_id)')
+          .eq('shift_definitions.site_id', scopedSiteId),
+        supabase.from('complaints').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'open'),
+        supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'open'),
+        supabase.from('lost_found').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'unclaimed'),
+        supabase.from('visitors').select('id', { count: 'exact', head: true }).eq('site_id', scopedSiteId).eq('status', 'on_site'),
+      ])
+      extra = {
+        totalTasks: shiftTasks?.length || 0,
+        complaints: complaintsCount || 0,
+        incidents:  incidentsCount  || 0,
+        lostFound:  lostFoundCount  || 0,
+        visitors:   visitorsCount   || 0,
+      }
+    }
+
     // Shift breakdown
     const shiftMap = {}
     if (compData) {
@@ -89,7 +130,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     setUrgentMessages(unread)
     onUnreadUrgent?.(unread.length)
 
-    setStats({ completed, flagged, openIssues, inProgress })
+    setStats({ completed, flagged, openIssues, inProgress, ...extra })
     setRecentIssues(issueData || [])
     setShiftSummary(Object.entries(shiftMap))
     setLoading(false)
@@ -103,6 +144,20 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
     if (hrs < 24) return `${hrs}h ago`
     return `${Math.floor(hrs / 24)}d ago`
   }
+
+  // Same signals as the HQ Network card, scoped to this gym. Every chip is
+  // tappable and lands on the screen the number came from.
+  const doneToday = stats.completed + stats.flagged
+  const pct = stats.totalTasks > 0 ? Math.round((doneToday / stats.totalTasks) * 100) : 0
+  const chips = [
+    { n: stats.openIssues, label: 'Issues',       color: 'var(--danger)',    bg: 'var(--danger-bg)',  go: () => onNavigate?.('issues') },
+    { n: stats.inProgress, label: 'In progress',  color: 'var(--warning)',   bg: 'var(--warning-bg)', go: () => onNavigate?.('issues') },
+    { n: stats.complaints, label: 'Complaints',   color: 'var(--danger)',    bg: 'var(--danger-bg)',  go: () => onNavigate?.('logs', 'complaints') },
+    { n: stats.incidents,  label: 'Incidents',    color: 'var(--warning)',   bg: 'var(--warning-bg)', go: () => onNavigate?.('logs', 'incidents') },
+    { n: stats.flagged,    label: 'Flagged',      color: 'var(--warning)',   bg: 'var(--warning-bg)', go: () => setShowTasks(true) },
+    { n: stats.lostFound,  label: 'Lost & Found', color: 'var(--warning)',   bg: 'var(--warning-bg)', go: () => onNavigate?.('logs', 'lost_found') },
+    { n: stats.visitors,   label: 'On site',      color: 'var(--aqua-dark)', bg: 'var(--aqua-light)', go: () => onNavigate?.('logs', 'visitors') },
+  ].filter(c => (c.n || 0) > 0)
 
   if (loading) return (
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -121,7 +176,7 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
       </div>
 
       {/* Manager-addressed notes */}
-      <NotesPanel siteId={staff.active_site_id || staff.site_id} mode="manager" />
+      <NotesPanel siteId={scopedSiteId} mode="all" />
 
       {/* Urgent messages banner */}
       {urgentMessages.length > 0 && (
@@ -147,43 +202,48 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
         </button>
       )}
 
-      {/* Stats */}
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-number" style={{ color: 'var(--success)' }}>{stats.completed}</div>
-          <div className="stat-label">Done</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-number" style={{ color: 'var(--danger)' }}>{stats.flagged}</div>
-          <div className="stat-label">Flagged</div>
-        </div>
-        <button className="stat-card" onClick={() => onNavigate?.('issues')} style={{
-          cursor: stats.openIssues > 0 ? 'pointer' : 'default',
-          border: stats.openIssues > 0 ? '1.5px solid rgba(217,79,79,0.3)' : '1px solid var(--border)',
-          background: stats.openIssues > 0 ? 'var(--danger-bg)' : 'var(--white)',
-        }}>
-          <div className="stat-number" style={{ color: stats.openIssues > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
-            {stats.openIssues}
+      {/* Attention + today's tasks — the HQ Network card for this one gym */}
+      <div className="card">
+        {chips.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+            {chips.map(c => (
+              <button key={c.label} onClick={c.go} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                background: c.bg, color: c.color, fontWeight: 700, fontSize: 12,
+                padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                border: `1px solid ${c.color}33`,
+              }}>
+                <span style={{
+                  background: c.color, color: '#fff', borderRadius: 10, minWidth: 16,
+                  height: 16, padding: '0 4px', fontSize: 11, display: 'inline-flex',
+                  alignItems: 'center', justifyContent: 'center',
+                }}>{c.n}</span>
+                {c.label}
+                <span style={{ opacity: 0.5, fontSize: 13, marginLeft: 1 }}>›</span>
+              </button>
+            ))}
           </div>
-          <div className="stat-label">Open</div>
-        </button>
-        <button className="stat-card" onClick={() => onNavigate?.('issues')} style={{
-          cursor: stats.inProgress > 0 ? 'pointer' : 'default',
-          border: stats.inProgress > 0 ? '1.5px solid rgba(232,144,26,0.3)' : '1px solid var(--border)',
-          background: stats.inProgress > 0 ? 'var(--warning-bg)' : 'var(--white)',
-        }}>
-          <div className="stat-number" style={{ color: stats.inProgress > 0 ? 'var(--warning)' : 'var(--text-secondary)' }}>
-            {stats.inProgress}
-          </div>
-          <div className="stat-label">In Prog.</div>
-        </button>
-      </div>
+        ) : (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 14,
+            color: 'var(--success)', fontWeight: 700, fontSize: 13,
+          }}>✓ All clear</div>
+        )}
 
-      {scopedSiteId && (
-        <button className="btn btn-outline btn-sm" onClick={() => setShowTasks(true)} style={{ width: '100%' }}>
-          📋 View today's tasks (done &amp; outstanding)
-        </button>
-      )}
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
+          {doneToday} of {stats.totalTasks} tasks completed today ({pct}%)
+        </div>
+        <div className="progress-bar">
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+
+        {scopedSiteId && (
+          <button className="btn btn-outline btn-sm" onClick={() => setShowTasks(true)}
+            style={{ width: '100%', marginTop: 14 }}>
+            📋 View today's tasks (done &amp; outstanding)
+          </button>
+        )}
+      </div>
 
       {reports.length > 0 && (
         <div className="card">
