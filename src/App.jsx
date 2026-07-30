@@ -135,6 +135,9 @@ export default function App() {
   // Site admins land on their site dashboard.
   const defaultTab = (staff?.role === 'hq' || staff?.role === 'region_manager') ? 'network' : 'dashboard'
   const [managerTab, setManagerTab]       = useState(defaultTab)
+  // When a Network/Home chip deep-links into the Forms area, this holds
+  // which register to open (e.g. 'lost_found'). Null = the default first one.
+  const [logsKey, setLogsKey]             = useState(null)
   const [composing, setComposing]         = useState(false)
   const [showLogs, setShowLogs]           = useState(false)
   const [unreadUrgent, setUnreadUrgent]   = useState(0)
@@ -176,6 +179,7 @@ export default function App() {
     setSelectedShift(null)
     setLocationData(null)
     setManagerTab(defaultTab)
+    setLogsKey(null)
     logout()
   }
 
@@ -188,18 +192,26 @@ export default function App() {
   if (isAdmin()) {
     const homeTab   = (staff.role === 'hq' || staff.role === 'region_manager') ? 'network' : 'dashboard'
     const homeLabel = homeTab === 'network' ? 'Network' : 'Home'
+
+    // Single navigation entry point. Pages call onNavigate('logs', 'lost_found')
+    // to jump straight to one register; onNavigate('issues') etc. as before.
+    const navigate = (tab, payload) => {
+      if (tab === 'logs') setLogsKey(typeof payload === 'string' ? payload : null)
+      setManagerTab(tab)
+    }
+
     const renderTab = () => {
       switch (managerTab) {
-        case 'dashboard': return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
-        case 'messages':  return <Messages onNavigate={setManagerTab} />
+        case 'dashboard': return <Dashboard onNavigate={navigate} onUnreadUrgent={setUnreadUrgent} />
+        case 'messages':  return <Messages onNavigate={navigate} />
         case 'staff':     return <StaffManagement />
         case 'tasks':     return <TaskLibrary />
         case 'shifts':    return <ShiftBuilder />
-        case 'issues':    return <Issues onNavigate={setManagerTab} />
-        case 'logs':      return <RegistersHub />
-        case 'network':   return <HQOverview onNavigate={setManagerTab} />
+        case 'issues':    return <Issues onNavigate={navigate} />
+        case 'logs':      return <RegistersHub key={logsKey || 'default'} initialKey={logsKey} />
+        case 'network':   return <HQOverview onNavigate={navigate} />
         case 'sites':     return <Sites />
-        default:          return <Dashboard onNavigate={setManagerTab} onUnreadUrgent={setUnreadUrgent} />
+        default:          return <Dashboard onNavigate={navigate} onUnreadUrgent={setUnreadUrgent} />
       }
     }
     return (
@@ -207,7 +219,7 @@ export default function App() {
         <Header staff={staff} onLogout={handleLogout} isFOH={false} />
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {managerTab !== homeTab && (
-            <button onClick={() => setManagerTab(homeTab)} style={{
+            <button onClick={() => navigate(homeTab)} style={{
               display: 'flex', alignItems: 'center', gap: 4, background: 'var(--white)', border: 'none',
               borderBottom: '1px solid var(--border)', padding: '10px 16px', fontSize: 13, fontWeight: 700,
               color: 'var(--navy)', cursor: 'pointer', flexShrink: 0, textAlign: 'left',
@@ -215,7 +227,7 @@ export default function App() {
           )}
           {renderTab()}
         </div>
-        <ManagerNav tab={managerTab} setTab={setManagerTab} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
+        <ManagerNav tab={managerTab} setTab={navigate} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
       </div>
     )
   }

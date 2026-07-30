@@ -32,7 +32,11 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   const [collectValue, setCollectValue] = useState('')
   const [collectingStatus, setCollectingStatus] = useState(null)
 
+  // HQ only: view every gym's records instead of just the one they're in.
+  const [allSites, setAllSites] = useState(false)
+
   const scopedSiteId = staff.active_site_id || staff.site_id
+  const siteScoped   = !allSites && !!scopedSiteId
 
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type })
@@ -48,7 +52,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
 
     let q = supabase.from(config.table).select(select).order('created_at', { ascending: false })
     if (filter !== 'all') q = q.eq('status', filter)
-    if (!isHQ()) q = q.eq('site_id', scopedSiteId)
+    if (siteScoped) q = q.eq('site_id', scopedSiteId)
 
     const { data, error } = await q
     if (error) console.error(`${config.table} query error:`, error)
@@ -56,21 +60,21 @@ export default function Register({ config, onBack, embedded = false, onChanged }
     setLoading(false)
   }
 
-  useEffect(() => { loadRecords() }, [filter, config.table])
+  useEffect(() => { loadRecords() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filter, config.table, allSites, scopedSiteId])
 
   // ── realtime sync (same approach as Issues) ───────────────────────
   useEffect(() => {
     if (!scopedSiteId && !isHQ()) return
-    const filterClause = isHQ() ? undefined : `site_id=eq.${scopedSiteId}`
+    const filterClause = siteScoped ? `site_id=eq.${scopedSiteId}` : undefined
     const channel = supabase
-      .channel(`${config.table}-sync-${scopedSiteId || 'hq'}`)
+      .channel(`${config.table}-sync-${allSites ? 'all' : (scopedSiteId || 'hq')}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: config.table, ...(filterClause ? { filter: filterClause } : {}) },
         () => loadRecords())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scopedSiteId, filter, config.table])
+  }, [scopedSiteId, filter, config.table, allSites])
 
   const openRecord = async (rec) => {
     setSelected(rec)
@@ -176,6 +180,24 @@ export default function Register({ config, onBack, embedded = false, onChanged }
             </div>
             <button className="btn btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowAdd(true)}>+ New</button>
           </div>
+
+          {/* HQ scope toggle — this gym (default) vs every gym */}
+          {isHQ() && scopedSiteId && (
+            <div style={{ display: 'flex', gap: 6, paddingBottom: 12 }}>
+              {[
+                { v: false, label: staff.active_site?.name || 'This gym' },
+                { v: true,  label: 'All gyms' },
+              ].map(o => (
+                <button key={String(o.v)} onClick={() => setAllSites(o.v)} style={{
+                  padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
+                  background: allSites === o.v ? 'var(--aqua-light)' : 'var(--white)',
+                  color: allSites === o.v ? 'var(--navy)' : 'var(--text-light)',
+                  border: `1px solid ${allSites === o.v ? 'var(--aqua)' : 'var(--border)'}`,
+                }}>{o.label}</button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* List */}
@@ -204,7 +226,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 5 }}>
                       {rec.logged ? `${rec.logged.first_name} ${rec.logged.last_name}` : '—'}
-                      {isHQ() && rec.sites && ` · ${rec.sites.name}`}
+                      {!siteScoped && rec.sites && ` · ${rec.sites.name}`}
                       {' · '}{timeAgo(rec.created_at)}
                     </div>
                   </div>
@@ -255,7 +277,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
                 {config.showTimes ? 'Signed in' : 'Logged'} {fmt(selected.created_at)}
                 {selected.logged && ` by ${selected.logged.first_name} ${selected.logged.last_name}`}
-                {isHQ() && selected.sites && ` · ${selected.sites.name}`}
+                {!siteScoped && selected.sites && ` · ${selected.sites.name}`}
               </div>
 
               {/* All configured fields */}

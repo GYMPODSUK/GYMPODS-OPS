@@ -9,21 +9,25 @@ import { useAuth } from '../../contexts/AuthContext'
 import { REGISTERS, REGISTER_ORDER } from '../../lib/registers'
 import Register from './Register'
 
-export default function RegistersHub({ onExit }) {
-  const { staff, isHQ } = useAuth()
-  const [active, setActive] = useState(REGISTER_ORDER[0])
+export default function RegistersHub({ onExit, initialKey }) {
+  const { staff } = useAuth()
+  // initialKey lets a Network/Home chip deep-link straight to one register.
+  const [active, setActive] = useState(
+    initialKey && REGISTERS[initialKey] ? initialKey : REGISTER_ORDER[0]
+  )
   const [counts, setCounts] = useState({})
 
   const scopedSiteId = staff.active_site_id || staff.site_id
 
-  // Live "needs attention" count = records still in the first (open) status.
+  // Live "needs attention" count = records still in the first (open) status,
+  // for the gym currently being viewed (matches the Network / Home chips).
   const loadCounts = async () => {
     const next = {}
     for (const key of REGISTER_ORDER) {
       const cfg = REGISTERS[key]
       let q = supabase.from(cfg.table).select('id', { count: 'exact', head: true })
         .eq('status', cfg.statuses[0].value)
-      if (!isHQ()) q = q.eq('site_id', scopedSiteId)
+      if (scopedSiteId) q = q.eq('site_id', scopedSiteId)
       const { count, error } = await q
       if (!error) next[key] = count || 0
     }
