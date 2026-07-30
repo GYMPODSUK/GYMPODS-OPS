@@ -3,8 +3,7 @@
 // marked done / flagged / outstanding. Opened from the Network cards.
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+import { shiftsRunningOn } from '../../lib/schedule'
 
 const STATUS_META = {
   completed:   { icon: '✓', label: 'Done',        color: 'var(--success)' },
@@ -16,7 +15,6 @@ export default function SiteTasksModal({ site, onClose }) {
   const [loading, setLoading] = useState(true)
   const [shifts, setShifts]   = useState([])
   const today    = new Date().toISOString().split('T')[0]
-  const todayKey = DAY_KEYS[new Date().getDay()]
 
   useEffect(() => { load() /* eslint-disable-next-line */ }, [site.id])
 
@@ -25,9 +23,9 @@ export default function SiteTasksModal({ site, onClose }) {
     const { data: defs } = await supabase
       .from('shift_definitions').select('*').eq('site_id', site.id).order('order_index')
 
-    // Shifts that run today (no day filter = every day)
-    const todays = (defs || []).filter(s =>
-      !s.days_of_week || s.days_of_week.length === 0 || s.days_of_week.includes(todayKey))
+    // Shifts that run today — shared helper, so this and the Network/Home
+    // tallies can never drift apart again.
+    const todays = shiftsRunningOn(defs)
     const shiftIds = todays.map(s => s.id)
 
     let taskRows = [], comps = []
