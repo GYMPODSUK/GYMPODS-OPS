@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLES } from '../../lib/permissions'
+import { shiftsRunningOn } from '../../lib/schedule'
 import SiteTasksModal from './SiteTasksModal'
 
 export default function HQOverview({ onNavigate }) {
@@ -33,8 +34,18 @@ export default function HQOverview({ onNavigate }) {
     if (siteData?.length) {
       const stats = {}
       for (const site of siteData) {
+        // Today's task total = tasks on the shifts that actually run today,
+        // not every task on the whole rota.
+        const { data: shiftDefs } = await supabase
+          .from('shift_definitions').select('id, days_of_week').eq('site_id', site.id)
+        const todayShiftIds = shiftsRunningOn(shiftDefs).map(sd => sd.id)
+        const { count: todayTaskCount } = todayShiftIds.length
+          ? await supabase.from('shift_tasks').select('id', { count: 'exact', head: true })
+              .in('shift_id', todayShiftIds)
+          : { count: 0 }
+
         const [
-          { data: comp }, { data: issues }, { data: urgent }, { data: shiftTasks },
+          { data: comp }, { data: issues }, { data: urgent },
           { count: complaintsCount }, { count: incidentsCount }, { count: lostFoundCount },
           { count: visitorsCount }, { count: notesCount },
         ] = await Promise.all([
@@ -42,8 +53,6 @@ export default function HQOverview({ onNavigate }) {
           supabase.from('issues').select('id').eq('site_id', site.id).eq('status', 'open'),
           supabase.from('messages').select('id').eq('site_id', site.id)
             .eq('priority', 'urgent').eq('resolved', false),
-          supabase.from('shift_tasks').select('id, shift_definitions!inner(site_id)')
-            .eq('shift_definitions.site_id', site.id),
           supabase.from('complaints').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'open'),
           supabase.from('incidents').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'open'),
           supabase.from('lost_found').select('id', { count: 'exact', head: true }).eq('site_id', site.id).eq('status', 'unclaimed'),
@@ -55,7 +64,7 @@ export default function HQOverview({ onNavigate }) {
           flagged:    comp?.filter(c => c.status === 'flagged').length || 0,
           openIssues: issues?.length || 0,
           urgent:     urgent?.length || 0,
-          totalTasks: shiftTasks?.length || 0,
+          totalTasks: todayTaskCount || 0,
           complaints: complaintsCount || 0,
           incidents:  incidentsCount || 0,
           lostFound:  lostFoundCount || 0,
