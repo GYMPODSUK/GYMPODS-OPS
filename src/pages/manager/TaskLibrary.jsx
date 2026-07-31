@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import TaskImageStrip, { fetchTaskImages, MAX_TASK_IMAGES } from '../shared/TaskImages'
 
 const CATEGORIES = [
   { value: 'cleaning',        label: 'Cleaning',        color: '#2A8A8E' },
@@ -43,6 +44,9 @@ const EMPTY_FORM = {
 
 export default function TaskLibrary() {
   const { staff, isAdmin } = useAuth()
+  // HQ and Region Managers have a null site_id — always fall back to the gym
+  // they're currently viewing, or the Task Library shows nothing for them.
+  const scopedSiteId = staff.active_site_id || staff.site_id
   const [tasks, setTasks]       = useState([])
   const [loading, setLoading]   = useState(true)
   const [filterCat, setFilterCat]   = useState('all')
@@ -52,16 +56,22 @@ export default function TaskLibrary() {
   const [saving, setSaving]     = useState(false)
   const [toast, setToast]       = useState(null)
   const [form, setForm]         = useState(EMPTY_FORM)
+  // Reference photos attached to the task being added/edited.
+  // Items are { id?, url, file? } — id present = already saved.
+  const [formImages, setFormImages] = useState([])
+  const imgRef = useRef()
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadData() /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [scopedSiteId])
 
   const loadData = async () => {
     setLoading(true)
     const { data } = await supabase
       .from('task_library').select('*')
-      .eq('site_id', staff.site_id)
+      .eq('site_id', scopedSiteId)
       .order('category').order('name')
-    setTasks(data || [])
+    const list = data || []
+    const imgMap = await fetchTaskImages(list.map(t => t.id))
+    setTasks(list.map(t => ({ ...t, images: imgMap[t.id] || [] })))
     setLoading(false)
   }
 
@@ -74,6 +84,7 @@ export default function TaskLibrary() {
     if (!isAdmin()) return
     setEditing(null)
     setForm(EMPTY_FORM)
+    setFormImages([])
     setShowForm(true)
   }
 
@@ -89,6 +100,7 @@ export default function TaskLibrary() {
       schedule_value: task.schedule_value || '',
       assigned_role:  task.assigned_role || '',
     })
+    setFormImages((task.images || []).map(r => ({ id: r.id, url: r.image_url })))
     setShowForm(true)
   }
 
@@ -104,7 +116,49 @@ export default function TaskLibrary() {
       schedule_value: task.schedule_value || '',
       assigned_role:  task.assigned_role || '',
     })
+    // Reuse the same uploaded files — the copy points at the same photos.
+    setFormImages((task.images || []).map(r => ({ url: r.image_url })))
     setShowForm(true)
+  }
+
+  const addFormImages = (e) => {
+    const room  = MAX_TASK_IMAGES - formImages.length
+    const files = Array.from(e.target.files || []).slice(0, Math.max(room, 0))
+    if (files.length) {
+      setFormImages(prev => [...prev, ...files.map(f => ({ file: f, url: URL.createObjectURL(f) }))])
+    }
+    e.target.value = ''   // so picking the same file twice still fires onChange
+  }
+
+  const removeFormImage = (i) => setFormImages(prev => prev.filter((_, idx) => idx !== i))
+
+  const uploadTaskImage = async (file, taskId) => {
+    const ext  = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = `${taskId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+    const { error } = await supabase.storage.from('task-images').upload(path, file)
+    if (error) throw error
+    const { data } = supabase.storage.from('task-images').getPublicUrl(path)
+    return data.publicUrl
+  }
+
+  // Reconcile the photo list against what's already saved: drop removals,
+  // upload new files, keep the on-screen order.
+  const saveTaskImages = async (taskId) => {
+    const keptIds = formImages.filter(i => i.id).map(i => i.id)
+    const removed = (editing?.images || []).filter(r => !keptIds.includes(r.id)).map(r => r.id)
+    if (removed.length) await supabase.from('task_images').delete().in('id', removed)
+
+    const newRows = []
+    for (let i = 0; i < formImages.length; i++) {
+      const img = formImages[i]
+      if (img.id) {
+        await supabase.from('task_images').update({ sort_order: i }).eq('id', img.id)
+      } else {
+        const url = img.file ? await uploadTaskImage(img.file, taskId) : img.url
+        newRows.push({ task_id: taskId, image_url: url, sort_order: i })
+      }
+    }
+    if (newRows.length) await supabase.from('task_images').insert(newRows)
   }
 
   const handleSave = async () => {
@@ -120,13 +174,18 @@ export default function TaskLibrary() {
         schedule_value: form.schedule_value ? parseInt(form.schedule_value) : null,
         assigned_role:  form.assigned_role || null,
       }
+      let taskId = editing?.id
       if (editing) {
         await supabase.from('task_library').update(payload).eq('id', editing.id)
-        showToast('Task updated')
       } else {
-        await supabase.from('task_library').insert({ ...payload, site_id: staff.site_id })
-        showToast('Task added')
+        const { data: created, error: insErr } = await supabase
+          .from('task_library').insert({ ...payload, site_id: scopedSiteId })
+          .select().single()
+        if (insErr) throw insErr
+        taskId = created.id
       }
+      await saveTaskImages(taskId)
+      showToast(editing ? 'Task updated' : 'Task added')
       setShowForm(false)
       loadData()
     } catch (err) {
@@ -250,6 +309,50 @@ export default function TaskLibrary() {
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
             </div>
 
+            {/* Reference photos — show the team how it should look, where kit
+                lives, where the panic points are. */}
+            <div className="form-group">
+              <label className="form-label">
+                Reference photos (optional) · {formImages.length}/{MAX_TASK_IMAGES}
+              </label>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', lineHeight: 1.4, marginBottom: 8 }}>
+                How the set-up should look, where things are kept, panic points — staff see these on the task.
+              </div>
+              <input type="file" accept="image/*" multiple ref={imgRef}
+                style={{ display: 'none' }} onChange={addFormImages} />
+
+              {formImages.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {formImages.map((img, i) => (
+                    <div key={i} style={{ position: 'relative', width: 64, height: 64, flexShrink: 0 }}>
+                      <img src={img.url} alt="" style={{
+                        width: 64, height: 64, objectFit: 'cover', display: 'block',
+                        borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
+                      }} />
+                      <button onClick={() => removeFormImage(i)} aria-label="Remove photo" style={{
+                        position: 'absolute', top: -6, right: -6, width: 22, height: 22,
+                        borderRadius: '50%', background: 'var(--danger)', color: '#fff',
+                        border: '2px solid var(--white)', fontSize: 13, fontWeight: 700,
+                        cursor: 'pointer', lineHeight: 1, display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', padding: 0,
+                      }}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {formImages.length < MAX_TASK_IMAGES ? (
+                <button className="btn btn-outline btn-sm" onClick={() => imgRef.current?.click()}
+                  style={{ width: '100%' }}>
+                  📷 Add photo
+                </button>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--text-light)', textAlign: 'center' }}>
+                  Maximum {MAX_TASK_IMAGES} photos — remove one to add another.
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div className="form-group">
                 <label className="form-label">Category</label>
@@ -349,7 +452,17 @@ function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdi
           {task.assigned_role && (
             <span className="badge badge-pending">{task.assigned_role}</span>
           )}
+          {task.images?.length > 0 && (
+            <span className="badge" style={{ background: 'var(--aqua-light)', color: 'var(--navy)' }}>
+              📷 {task.images.length}
+            </span>
+          )}
         </div>
+        {task.images?.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <TaskImageStrip images={task.images} size={44} />
+          </div>
+        )}
       </div>
       {isAdmin && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
