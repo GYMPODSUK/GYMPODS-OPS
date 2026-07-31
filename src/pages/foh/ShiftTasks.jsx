@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
+import TaskImageStrip, { fetchTaskImages } from '../shared/TaskImages'
 
 const CAT_COLORS = {
   cleaning: '#2A8A8E', health_safety: '#C07010',
@@ -15,6 +16,7 @@ const CAT_LABELS = {
 export default function ShiftTasks({ shift, locationData, onBack }) {
   const { staff } = useAuth()
   const [tasks, setTasks] = useState([])
+  const [taskImages, setTaskImages] = useState({})
   const [completions, setCompletions] = useState({})
   const [expanded, setExpanded] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -33,7 +35,10 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
     const { data: taskData } = await supabase
       .from('shift_tasks').select('order_index, task_library(*)')
       .eq('shift_id', shift.id).order('order_index')
-    setTasks(taskData?.map(t => t.task_library) || [])
+    const list = taskData?.map(t => t.task_library).filter(Boolean) || []
+    setTasks(list)
+    // Reference photos the manager attached in the Task Library.
+    setTaskImages(await fetchTaskImages(list.map(t => t.id)))
 
     const { data: compData } = await supabase
       .from('task_completions').select('*')
@@ -174,14 +179,15 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
             const comp = completions[task.id]
             const status = comp?.status || 'pending'
             const isExpanded = expanded === task.id
+            const refImages = taskImages[task.id] || []
 
             return (
               <div key={task.id} className={`task-row ${status}`}>
                 {/* Task header — always tappable */}
                 <div
                   className="task-header"
-                  onClick={() => !comp && setExpanded(isExpanded ? null : task.id)}
-                  style={{ cursor: comp ? 'default' : 'pointer' }}
+                  onClick={() => setExpanded(isExpanded ? null : task.id)}
+                  style={{ cursor: 'pointer' }}
                 >
                   <div className="task-dot" style={{ background: CAT_COLORS[task.category] || '#888' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -193,6 +199,11 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                       <span className={`badge cat-${task.category}`} style={{ fontSize: 10 }}>
                         {CAT_LABELS[task.category]}
                       </span>
+                      {refImages.length > 0 && (
+                        <span className="badge" style={{
+                          fontSize: 10, background: 'var(--aqua-light)', color: 'var(--navy)',
+                        }}>📷 {refImages.length}</span>
+                      )}
                     </div>
                     {comp?.comment && (
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 5, fontStyle: 'italic', lineHeight: 1.4 }}>
@@ -200,17 +211,15 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                       </div>
                     )}
                   </div>
-                  {!comp && (
-                    <span style={{
-                      color: 'var(--text-light)', fontSize: 20, flexShrink: 0,
-                      transform: isExpanded ? 'rotate(90deg)' : 'none',
-                      transition: 'transform 0.2s', display: 'block'
-                    }}>›</span>
-                  )}
+                  <span style={{
+                    color: 'var(--text-light)', fontSize: 20, flexShrink: 0,
+                    transform: isExpanded ? 'rotate(90deg)' : 'none',
+                    transition: 'transform 0.2s', display: 'block'
+                  }}>›</span>
                 </div>
 
                 {/* Expanded action area */}
-                {isExpanded && !comp && (
+                {isExpanded && (
                   <div className="task-actions">
                     {task.description && (
                       <div style={{
@@ -220,14 +229,23 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                         {task.description}
                       </div>
                     )}
-                    <div className="task-btn-row">
-                      <button className="btn btn-success" onClick={() => openModal(task, 'complete')}>
-                        ✓ Complete
-                      </button>
-                      <button className="btn btn-danger" onClick={() => openModal(task, 'flag')}>
-                        ⚑ Flag Issue
-                      </button>
-                    </div>
+
+                    {refImages.length > 0 && (
+                      <div style={{ padding: '4px 0 12px' }}>
+                        <TaskImageStrip images={refImages} size={64} showLabel />
+                      </div>
+                    )}
+
+                    {!comp && (
+                      <div className="task-btn-row">
+                        <button className="btn btn-success" onClick={() => openModal(task, 'complete')}>
+                          ✓ Complete
+                        </button>
+                        <button className="btn btn-danger" onClick={() => openModal(task, 'flag')}>
+                          ⚑ Flag Issue
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
