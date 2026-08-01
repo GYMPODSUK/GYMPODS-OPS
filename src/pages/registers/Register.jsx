@@ -38,9 +38,9 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   const scopedSiteId = staff.active_site_id || staff.site_id
   const siteScoped   = !allSites && !!scopedSiteId
 
-  const showToast = (msg, type = 'success') => {
+  const showToast = (msg, type = 'success', ms = 2200) => {
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 2200)
+    setTimeout(() => setToast(null), ms)
   }
 
   // ── data load ─────────────────────────────────────────────────────
@@ -247,7 +247,12 @@ export default function Register({ config, onBack, embedded = false, onChanged }
       {showAdd && (
         <AddRecordForm config={config} scopedSiteId={scopedSiteId} staffId={staff.id}
           onClose={() => setShowAdd(false)}
-          onSaved={() => { setShowAdd(false); showToast(`${config.singular} logged ✓`); onChanged?.(); /* realtime refreshes list */ }}
+          onSaved={(warning) => {
+            setShowAdd(false)
+            if (warning) showToast(warning, 'error', 6000)
+            else showToast(`${config.singular} logged ✓`)
+            onChanged?.() /* realtime refreshes list */
+          }}
         />
       )}
 
@@ -393,10 +398,23 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
   }
   const removeImage = (i) => setImages(prev => prev.filter((_, idx) => idx !== i))
 
-  const uploadImage = async (file, recordId) => {
-    const ext = file.name.split('.').pop()
-    const path = `${config.recordType}/${recordId}/${Date.now()}.${ext}`
-    const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file)
+  // Phone cameras hand us all sorts of filenames (and sometimes none at all),
+  // so derive a safe extension from the file type rather than trusting the name.
+  const safeExt = (file) => {
+    const fromName = (file.name || '').split('.').pop()
+    if (fromName && /^[a-z0-9]{2,5}$/i.test(fromName)) return fromName.toLowerCase()
+    const fromType = (file.type || '').split('/').pop()
+    if (fromType && /^[a-z0-9]{2,5}$/i.test(fromType)) return fromType.toLowerCase()
+    return 'jpg'
+  }
+
+  const uploadImage = async (file, recordId, index) => {
+    const path = `${config.recordType}/${recordId}/${Date.now()}-${index}.${safeExt(file)}`
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, file, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: file.type || 'image/jpeg',
+    })
     if (error) throw error
     const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path)
     return data.publicUrl
@@ -410,6 +428,9 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
       }
     }
     setSaving(true); setError(null)
+
+    // Step 1 — save the record itself. If this fails, nothing is logged.
+    let rec
     try {
       const payload = { site_id: scopedSiteId, logged_by: staffId }
       config.fields.forEach(f => {
@@ -418,25 +439,44 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
         else if (typeof v === 'string') v = v.trim() || null
         payload[f.name] = v
       })
-      const { data: rec, error: insErr } = await supabase
+      const { data, error: insErr } = await supabase
         .from(config.table).insert(payload).select().single()
       if (insErr) throw insErr
+      rec = data
+    } catch (err) {
+      console.error(`${config.table} insert failed:`, err)
+      setError(err?.message ? `Couldn't save — ${err.message}` : 'Something went wrong — please try again')
+      setSaving(false)
+      return
+    }
 
-      if (config.hasImages) {
-        for (const img of images) {
-          const url = await uploadImage(img.file, rec.id)
-          await supabase.from('record_images').insert({
+    // Step 2 — photos. The record is already safely logged, so a photo
+    // problem must never throw the whole entry away; we report it instead.
+    let photoWarning = null
+    if (config.hasImages && images.length > 0) {
+      let failed = 0
+      let lastMsg = ''
+      for (let i = 0; i < images.length; i++) {
+        try {
+          const url = await uploadImage(images[i].file, rec.id, i)
+          const { error: imgErr } = await supabase.from('record_images').insert({
             record_type: config.recordType, record_id: rec.id, image_url: url,
           })
+          if (imgErr) throw imgErr
+        } catch (err) {
+          console.error('photo upload failed:', err)
+          failed++
+          lastMsg = err?.message || ''
         }
       }
-      onSaved()
-    } catch (err) {
-      console.error(err)
-      setError('Something went wrong — please try again')
-    } finally {
-      setSaving(false)
+      if (failed > 0) {
+        photoWarning = `${config.singular} logged, but ${failed} photo${failed > 1 ? 's' : ''} didn't upload`
+          + (lastMsg ? ` — ${lastMsg}` : '')
+      }
     }
+
+    setSaving(false)
+    onSaved(photoWarning)
   }
 
   const renderField = (f) => {
