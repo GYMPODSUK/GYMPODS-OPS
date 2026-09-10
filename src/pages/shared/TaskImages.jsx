@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
-export const MAX_TASK_IMAGES = 4
+export const MAX_TASK_IMAGES = 6
 
 /**
  * Fetch reference images for a set of tasks in one query.
