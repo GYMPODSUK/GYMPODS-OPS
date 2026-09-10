@@ -142,6 +142,11 @@ export default function App() {
   const [showLogs, setShowLogs]           = useState(false)
   const [unreadUrgent, setUnreadUrgent]   = useState(0)
   const [hasUnread, setHasUnread]         = useState(false)
+  // "Cover a shift" — lets a Site Manager step into the same shift/task
+  // flow floor staff use, for when they're covering a shift themselves.
+  const [showCoverShift, setShowCoverShift]   = useState(false)
+  const [coverShift, setCoverShift]           = useState(null)
+  const [coverLocationData, setCoverLocationData] = useState(null)
 
   // Red dot on the Messages nav whenever there are unread messages.
   useEffect(() => {
@@ -196,8 +201,15 @@ export default function App() {
     // Single navigation entry point. Pages call onNavigate('logs', 'lost_found')
     // to jump straight to one register; onNavigate('issues') etc. as before.
     const navigate = (tab, payload) => {
+      if (tab === 'cover-shift') { setShowCoverShift(true); return }
       if (tab === 'logs') setLogsKey(typeof payload === 'string' ? payload : null)
       setManagerTab(tab)
+    }
+
+    const closeCoverShift = () => {
+      setShowCoverShift(false)
+      setCoverShift(null)
+      setCoverLocationData(null)
     }
 
     const renderTab = () => {
@@ -228,6 +240,33 @@ export default function App() {
           {renderTab()}
         </div>
         <ManagerNav tab={managerTab} setTab={navigate} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
+        {showCoverShift && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(13,33,55,0.4)', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ width: '100%', maxWidth: 480, height: '100%', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
+              }}>
+                <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--navy)' }}>Cover a shift</div>
+                <button className="btn-icon" onClick={closeCoverShift} aria-label="Close"
+                  style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy)' }}>
+                  ✕
+                </button>
+              </div>
+              <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                {coverShift ? (
+                  <ShiftTasks
+                    shift={coverShift}
+                    locationData={coverLocationData}
+                    onBack={() => { setCoverShift(null); setCoverLocationData(null) }}
+                  />
+                ) : (
+                  <ShiftSelector onSelectShift={(shift, location) => { setCoverShift(shift); setCoverLocationData(location) }} />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
