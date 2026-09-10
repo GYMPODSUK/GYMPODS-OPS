@@ -56,10 +56,14 @@ export default function ShiftSelector({ onSelectShift }) {
       .from('shift_definitions').select('*')
       .eq('site_id', staff.site_id).order('order_index')
 
+    // A manager covering a shift needs to see every shift at the site,
+    // not just the ones normally rostered to their own role.
+    const isCoveringManager = ['admin', 'region_manager', 'hq'].includes(staff.role)
+
     // Filter by role AND day of week
     const relevantShifts = (allShifts || []).filter(s => {
       // Role filter
-      if (s.visible_to_roles && s.visible_to_roles.length > 0) {
+      if (!isCoveringManager && s.visible_to_roles && s.visible_to_roles.length > 0) {
         if (!s.visible_to_roles.includes(staff.role)) return false
       }
       // Day of week filter
