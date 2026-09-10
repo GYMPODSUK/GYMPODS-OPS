@@ -182,6 +182,14 @@ export default function Dashboard({ onNavigate, onUnreadUrgent }) {
         </div>
       </div>
 
+      {/* Standing in on the floor — opens the same shift/task flow staff use,
+          but sees every shift and every task at the site, whoever it's normally for. */}
+      {staff.role === 'admin' && (
+        <button className="btn btn-outline" onClick={() => onNavigate?.('cover-shift')} style={{ width: '100%' }}>
+          🧍 Cover a shift
+        </button>
+      )}
+
       {/* Manager-addressed notes */}
       <NotesPanel siteId={scopedSiteId} mode="all" />
 

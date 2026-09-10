@@ -30,16 +30,48 @@ const SCHEDULE_TYPES = [
 
 const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
 
-const ROLES = [
-  { value: '',           label: 'Any staff' },
-  { value: 'foh',        label: 'FOH and above' },
-  { value: 'senior_foh', label: 'Senior FOH and above' },
-  { value: 'admin',      label: 'Admin only' },
+const ROLE_OPTIONS = [
+  { value: 'trainee',    label: 'Trainee' },
+  { value: 'cleaner',    label: 'Cleaner' },
+  { value: 'foh',        label: 'FOH' },
+  { value: 'senior_foh', label: 'Senior FOH' },
+  { value: 'admin',      label: 'Site Manager' },
 ]
+
+const ROLE_LABEL = Object.fromEntries(ROLE_OPTIONS.map(r => [r.value, r.label]))
+
+// Exact-match, not hierarchy: e.g. Trainee-only and FOH-only can now be
+// two different, non-overlapping task sets rather than "X and above".
+function ToggleGroup({ options, selected, onChange }) {
+  const toggle = (val) => {
+    const updated = selected.includes(val)
+      ? selected.filter(v => v !== val)
+      : [...selected, val]
+    onChange(updated)
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {options.map(o => {
+        const active = selected.includes(o.value)
+        return (
+          <button key={o.value} type="button" onClick={() => toggle(o.value)} style={{
+            padding: '6px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', transition: 'all 0.15s',
+            background: active ? 'var(--navy)' : 'var(--off-white)',
+            color: active ? 'var(--white)' : 'var(--text-secondary)',
+            border: `1px solid ${active ? 'var(--navy)' : 'var(--border)'}`,
+          }}>
+            {active ? '✓ ' : ''}{o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
 
 const EMPTY_FORM = {
   name: '', description: '', category: 'cleaning', frequency: 'session',
-  schedule_type: 'any', schedule_value: '', assigned_role: ''
+  schedule_type: 'any', schedule_value: '', assigned_roles: []
 }
 
 export default function TaskLibrary() {
@@ -98,7 +130,7 @@ export default function TaskLibrary() {
       frequency:      task.frequency || 'session',
       schedule_type:  task.schedule_type || 'any',
       schedule_value: task.schedule_value || '',
-      assigned_role:  task.assigned_role || '',
+      assigned_roles: task.assigned_roles || [],
     })
     setFormImages((task.images || []).map(r => ({ id: r.id, url: r.image_url })))
     setShowForm(true)
@@ -114,7 +146,7 @@ export default function TaskLibrary() {
       frequency:      task.frequency || 'session',
       schedule_type:  task.schedule_type || 'any',
       schedule_value: task.schedule_value || '',
-      assigned_role:  task.assigned_role || '',
+      assigned_roles: task.assigned_roles || [],
     })
     // Reuse the same uploaded files — the copy points at the same photos.
     setFormImages((task.images || []).map(r => ({ url: r.image_url })))
@@ -172,7 +204,7 @@ export default function TaskLibrary() {
         frequency:      form.frequency,
         schedule_type:  form.schedule_type,
         schedule_value: form.schedule_value ? parseInt(form.schedule_value) : null,
-        assigned_role:  form.assigned_role || null,
+        assigned_roles: form.assigned_roles,
       }
       let taskId = editing?.id
       if (editing) {
@@ -402,10 +434,12 @@ export default function TaskLibrary() {
 
             <div className="form-group">
               <label className="form-label">Assigned to</label>
-              <select className="form-select" value={form.assigned_role}
-                onChange={e => setForm(f => ({ ...f, assigned_role: e.target.value }))}>
-                {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', lineHeight: 1.4, marginBottom: 8 }}>
+                Pick exactly who this task is for — e.g. just Cleaner, or Trainee + FOH together.
+                Leave all unselected for any staff to see it.
+              </div>
+              <ToggleGroup options={ROLE_OPTIONS} selected={form.assigned_roles}
+                onChange={roles => setForm(f => ({ ...f, assigned_roles: roles }))} />
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
@@ -449,8 +483,10 @@ function TaskCard({ task, getCatColor, getCatLabel, getFreqLabel, isAdmin, onEdi
               {getFreqLabel(task.frequency)}
             </span>
           )}
-          {task.assigned_role && (
-            <span className="badge badge-pending">{task.assigned_role}</span>
+          {task.assigned_roles?.length > 0 && (
+            <span className="badge badge-pending">
+              {task.assigned_roles.map(r => ROLE_LABEL[r] || r).join(' + ')}
+            </span>
           )}
           {task.images?.length > 0 && (
             <span className="badge" style={{ background: 'var(--aqua-light)', color: 'var(--navy)' }}>

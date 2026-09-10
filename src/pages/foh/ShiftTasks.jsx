@@ -35,7 +35,16 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
     const { data: taskData } = await supabase
       .from('shift_tasks').select('order_index, task_library(*)')
       .eq('shift_id', shift.id).order('order_index')
-    const list = taskData?.map(t => t.task_library).filter(Boolean) || []
+    let list = taskData?.map(t => t.task_library).filter(Boolean) || []
+    // Exact-role filter: a task with roles set only shows to staff in that
+    // set (e.g. a Trainee-only task never shows to FOH, even though FOH
+    // outranks Trainee — this isn't a hierarchy). Empty roles = any staff.
+    // A manager covering a shift sees every task, regardless of role, so
+    // nothing gets missed while they're standing in.
+    const isCoveringManager = ['admin', 'region_manager', 'hq'].includes(staff.role)
+    if (!isCoveringManager) {
+      list = list.filter(t => !t.assigned_roles?.length || t.assigned_roles.includes(staff.role))
+    }
     setTasks(list)
     // Reference photos the manager attached in the Task Library.
     setTaskImages(await fetchTaskImages(list.map(t => t.id)))
