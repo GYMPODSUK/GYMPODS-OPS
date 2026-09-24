@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
+import { TranslatedText } from '../../lib/translate'
 
 const PRIORITY_CONFIG = {
   urgent: { label: 'Urgent', color: '#E8301A', bg: 'rgba(232,48,26,0.06)', dot: '#E8301A', border: 'rgba(232,48,26,0.2)' },
@@ -73,7 +74,9 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
         }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 14, color: cfg.color }}>{message.title}</span>
+            <span style={{ fontWeight: 700, fontSize: 14, color: cfg.color }}>
+              <TranslatedText text={message.title} authorLang={message.staff?.language} compact />
+            </span>
             {isUnread && message.priority === 'urgent' && (
               <span style={{
                 fontSize: 10, fontWeight: 700, background: '#E8301A', color: '#fff',
@@ -102,8 +105,8 @@ function MessageCard({ message, staffId, onMarkRead, onResolve }) {
       {expanded && (
         <div style={{ padding: '0 14px 14px', borderTop: '1px solid var(--border)' }}>
           {message.body ? (
-            <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, paddingTop: 12 }}>
-              {message.body}
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', lineHeight: 1.6, paddingTop: 12, whiteSpace: 'pre-wrap' }}>
+              <TranslatedText text={message.body} authorLang={message.staff?.language} />
             </div>
           ) : (
             <div style={{ fontSize: 13, color: 'var(--text-light)', paddingTop: 10, fontStyle: 'italic' }}>
@@ -173,7 +176,7 @@ export default function Messages({ onNavigate }) {
     setLoading(true)
     const { data } = await supabase
       .from('messages')
-      .select('*, staff:staff_id(first_name, last_name)')
+      .select('*, staff:staff_id(first_name, last_name, language)')
       .eq('site_id', scopedSiteId)
       .eq('resolved', false)
       .order('created_at', { ascending: false })
