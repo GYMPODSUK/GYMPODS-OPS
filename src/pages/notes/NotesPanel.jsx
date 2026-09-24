@@ -21,6 +21,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { dateKey } from '../../lib/schedule'
 import { useT, useLanguage } from '../../lib/i18n'
+import { TranslatedText } from '../../lib/translate'
 
 // Panel wording in all five languages. The message TEXT people type is
 // translated separately (DeepL — a later step); shift names stay as typed.
@@ -108,7 +109,7 @@ export default function NotesPanel({ siteId, mode, shiftId }) {
     const { data, error: qErr } = await supabase
       .from('notes')
       .select(`*,
-        author:author_id ( first_name, last_name ),
+        author:author_id ( first_name, last_name, language ),
         shift:target_shift_id ( name ),
         target_staff:target_staff_id ( first_name, last_name )`)
       .eq('site_id', siteId).eq('status', 'open')
@@ -211,7 +212,7 @@ export default function NotesPanel({ siteId, mode, shiftId }) {
               fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.4, fontWeight: 600,
               overflow: 'hidden', textOverflow: 'ellipsis',
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-            }}>{n.body}</div>
+            }}><TranslatedText text={n.body} authorLang={n.author?.language} compact /></div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
               {personName(n.author)}
               {' · '}{targetLabel(n)}
@@ -243,7 +244,7 @@ export default function NotesPanel({ siteId, mode, shiftId }) {
               background: 'var(--warning-bg)', border: '1px solid rgba(232,144,26,0.25)',
               borderRadius: 'var(--radius-md)', padding: 14, marginBottom: 12,
               fontSize: 15, lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap',
-            }}>{selected.body}</div>
+            }}><TranslatedText text={selected.body} authorLang={selected.author?.language} /></div>
 
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
               {t('from')} <strong style={{ color: 'var(--text-primary)' }}>{personName(selected.author)}</strong>
