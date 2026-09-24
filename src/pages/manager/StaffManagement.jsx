@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { ROLES, ROLE_LABEL, ROLE_RANK, PIN_LENGTH, canPromoteTo } from '../../lib/permissions'
+import { LANGUAGES } from '../../lib/i18n'
 
 // Reset-reason options shown in the audit dropdown.
 // Must match the CHECK constraint on pin_changes.reason_code.
@@ -31,7 +32,7 @@ export default function StaffManagement() {
 
   const [form, setForm] = useState({
     first_name: '', last_name: '', pin: '',
-    role: 'foh', site_id: '', region_id: '', active: true,
+    role: 'foh', site_id: '', region_id: '', active: true, language: 'en',
   })
 
   useEffect(() => { loadData() }, [])
@@ -119,6 +120,7 @@ export default function StaffManagement() {
       site_id: myRole === ROLES.ADMIN ? mySiteId : '',
       region_id: myRole === ROLES.REGION_MANAGER ? myRegionId : '',
       active: true,
+      language: 'en',
     })
     setShowForm(true)
   }
@@ -132,6 +134,7 @@ export default function StaffManagement() {
       site_id: s.site_id || '',
       region_id: s.region_id || '',
       active: s.active,
+      language: s.language || 'en',
     })
     setShowForm(true)
   }
@@ -173,6 +176,7 @@ export default function StaffManagement() {
         site_id:    form.site_id || null,
         region_id:  form.region_id || null,
         active:     form.active,
+        language:   form.language || 'en',
       }
       if (!editing) payload.pin = form.pin
 
@@ -304,6 +308,14 @@ export default function StaffManagement() {
                           <span style={{ fontSize: 11, color: 'var(--text-light)', fontWeight: 500 }}>
                             🔒 PIN set
                           </span>
+                          {s.language && s.language !== 'en' && (() => {
+                            const l = LANGUAGES.find(x => x.code === s.language)
+                            return l ? (
+                              <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                {l.flag} {l.name}
+                              </span>
+                            ) : null
+                          })()}
                         </div>
                       </div>
                       {canTouch && (
@@ -391,6 +403,17 @@ export default function StaffManagement() {
                 </select>
               </div>
             )}
+
+            <div className="form-group">
+              <label className="form-label">Language</label>
+              <select className="form-select" value={form.language}
+                onChange={e => setForm(f => ({ ...f, language: e.target.value }))}>
+                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.flag} {l.name}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>
+                PODOR opens in this language when they log in. They can change it any time with the flag button.
+              </div>
+            </div>
 
             {!editing && (
               <div className="form-group">
