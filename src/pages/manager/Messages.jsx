@@ -11,7 +11,7 @@ const PRIORITY_CONFIG = {
 }
 
 const TYPE_LABELS = {
-  handover:    '🔄 Handover',
+  handover:    '🔄 Handover',   // legacy — no longer offered in compose, kept so old ones still label correctly
   member_note: '👤 Member',
   general:     '💬 General',
   photo:       '📷 Photo',
@@ -239,7 +239,7 @@ export default function Messages({ onNavigate }) {
       )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, overflowX: 'auto', paddingBottom: 2 }}>
-        {['all', 'handover', 'member_note', 'general', 'photo'].map(f => (
+        {['all', 'member_note', 'general', 'photo'].map(f => (
           <button key={f} onClick={() => setFilter(f)} style={{
             padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
             border: '1px solid var(--border)', cursor: 'pointer', whiteSpace: 'nowrap',

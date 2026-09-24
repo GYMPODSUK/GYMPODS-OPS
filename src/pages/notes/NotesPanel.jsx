@@ -1,65 +1,78 @@
 // src/pages/notes/NotesPanel.jsx
-// Cross-shift notes. A note targets a specific shift OR managers, and
-// stays until someone reads it and marks it done (then it disappears
-// for everyone via realtime). Used on the FOH shift screen (mode="shift"),
-// the manager Messages page (mode="manager") and Home (mode="all").
+// Shows open TEAM MESSAGES (stored in the `notes` table). Messages are now
+// written from the single compose sheet (header compose icon → "Message team
+// members"), so this panel only DISPLAYS them — the old "+ Note" button is gone.
 //
-// The list shows compact one-note-per-row cards; tapping one opens it on
-// its own in a focused view so a long note can't be buried under the
-// notes below it. Mark done from there and it clears everywhere.
+// A team message is addressed to one of:
+//   • a shift        — target_shift_id, with target_date = a specific day, or
+//                      NULL = "the next one, whichever day"
+//   • a team member  — target_staff_id
+//   • managers       — legacy notes from before this change (still shown)
+//
+// Modes:
+//   'shift'   FOH shift screen  → this shift's messages (from their day on) + ones for me
+//   'me'      shift selector    → messages addressed to me personally
+//   'manager' Messages tab      → legacy "for managers" notes + ones for me
+//   'all'     manager Home      → every open message at this gym, labelled
+//
+// Tapping a row opens it on its own; "Mark done" clears it for everyone.
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import ComposeNote from './ComposeNote'
+import { dateKey } from '../../lib/schedule'
 
-export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
+const dayLabel = (ymd) => {
+  const [y, m, d] = ymd.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+}
+
+export default function NotesPanel({ siteId, mode, shiftId }) {
   const { staff } = useAuth()
-  const [notes, setNotes]         = useState([])
-  const [shifts, setShifts]       = useState([])
-  const [composing, setComposing] = useState(false)
-  const [busyId, setBusyId]       = useState(null)
-  const [selected, setSelected]   = useState(null)   // the note being read
-  const [error, setError]         = useState(null)
+  const [notes, setNotes]       = useState([])
+  const [busyId, setBusyId]     = useState(null)
+  const [selected, setSelected] = useState(null)   // the message being read
+  const [error, setError]       = useState(null)
+
+  // Which open messages belong in this panel. Filtered here rather than in
+  // the query — volumes are tiny and it keeps the rules readable.
+  const belongsHere = (n) => {
+    const today   = dateKey()
+    const forMe   = n.target_type === 'staff' && n.target_staff_id === staff.id
+    const dueYet  = !n.target_date || n.target_date <= today
+    if (mode === 'shift')   return forMe || (n.target_type === 'shift' && n.target_shift_id === shiftId && dueYet)
+    if (mode === 'me')      return forMe
+    if (mode === 'manager') return forMe || n.target_type === 'manager'
+    return true // 'all'
+  }
 
   const loadNotes = async () => {
     if (!siteId) { setNotes([]); return }
-    let q = supabase
+    const { data, error: qErr } = await supabase
       .from('notes')
-      .select('*, author:author_id ( first_name, last_name ), shift:target_shift_id ( name )')
+      .select(`*,
+        author:author_id ( first_name, last_name ),
+        shift:target_shift_id ( name ),
+        target_staff:target_staff_id ( first_name, last_name )`)
       .eq('site_id', siteId).eq('status', 'open')
       .order('created_at', { ascending: false })
-    // mode 'shift'   → just this shift's notes (FOH shift screen)
-    // mode 'manager'  → only notes addressed to managers
-    // mode 'all'      → every open note at this gym, labelled by who it's for
-    if (mode === 'shift')        q = q.eq('target_type', 'shift').eq('target_shift_id', shiftId)
-    else if (mode === 'manager') q = q.eq('target_type', 'manager')
-    const { data, error: qErr } = await q
     if (qErr) console.error('notes query error:', qErr)
-    setNotes(data || [])
+    setNotes((data || []).filter(belongsHere))
   }
 
-  const loadShifts = async () => {
-    if (!siteId) return
-    const { data } = await supabase
-      .from('shift_definitions').select('id, name').eq('site_id', siteId).order('order_index')
-    setShifts(data || [])
-  }
-
-  useEffect(() => { loadNotes(); loadShifts() /* eslint-disable-next-line */ }, [siteId, mode, shiftId])
+  useEffect(() => { loadNotes() /* eslint-disable-next-line */ }, [siteId, mode, shiftId, staff?.id])
 
   useEffect(() => {
     if (!siteId) return
     const channel = supabase
-      .channel(`notes-sync-${siteId}-${mode}`)
+      .channel(`notes-sync-${siteId}-${mode}-${shiftId || 'none'}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notes', filter: `site_id=eq.${siteId}` },
         () => loadNotes())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, mode, shiftId])
+  }, [siteId, mode, shiftId, staff?.id])
 
-  // If the open note gets cleared by someone else, close the focused view
-  // rather than leaving a stale note on screen.
+  // If the open message gets cleared by someone else, close the focused view.
   useEffect(() => {
     if (selected && !notes.some(n => n.id === selected.id)) setSelected(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,7 +86,7 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
     setBusyId(null)
     if (upErr) {
       console.error('note mark-done failed:', upErr)
-      setError(upErr.message || 'Could not mark this note done — please try again')
+      setError(upErr.message || 'Could not mark this done — please try again')
       return
     }
     setSelected(null)
@@ -92,23 +105,33 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   })
 
-  const heading = mode === 'shift' ? '📌 Shift notes'
-    : mode === 'all' ? '📌 Open notes'
-    : '📌 Notes for managers'
+  const personName = (p) => (p ? `${p.first_name} ${p.last_name}` : '—')
 
-  // Who a note is addressed to — only worth showing when the panel mixes types.
-  const targetLabel = (n) =>
-    n.target_type === 'shift' ? `for ${n.shift?.name || 'a shift'}` : 'for managers'
+  // Who a message is for, e.g. "for you", "for Thu 26 Sep · Morning",
+  // "for next Evening shift", "for Sarah Khan", "for managers".
+  const targetLabel = (n) => {
+    if (n.target_type === 'staff') {
+      return n.target_staff_id === staff.id ? 'for you' : `for ${personName(n.target_staff)}`
+    }
+    if (n.target_type === 'shift') {
+      const name = n.shift?.name || 'a shift'
+      return n.target_date ? `for ${dayLabel(n.target_date)} · ${name}` : `for next ${name} shift`
+    }
+    return 'for managers'
+  }
 
-  const authorName = (n) => (n.author ? `${n.author.first_name} ${n.author.last_name}` : '—')
+  const heading = mode === 'shift' ? '📌 Messages for this shift'
+    : mode === 'me' ? '📌 Messages for you'
+    : mode === 'manager' ? '📌 Team messages for you'
+    : '📌 Open team messages'
+
+  // Nothing open → take up no space at all.
+  if (notes.length === 0) return null
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: notes.length ? 8 : 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--navy)' }}>
-          {heading}{notes.length > 0 && <span style={{ color: 'var(--danger)' }}> · {notes.length}</span>}
-        </div>
-        <button className="btn btn-outline btn-sm" onClick={() => setComposing(true)}>+ Note</button>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--navy)', marginBottom: 8 }}>
+        {heading}<span style={{ color: 'var(--danger)' }}> · {notes.length}</span>
       </div>
 
       {/* Compact list — tap a row to read it on its own */}
@@ -126,8 +149,8 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
               display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             }}>{n.body}</div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
-              {authorName(n)}
-              {mode !== 'shift' && ` · ${targetLabel(n)}`}
+              {personName(n.author)}
+              {' · '}{targetLabel(n)}
               {' · '}{timeAgo(n.created_at)}
             </div>
           </div>
@@ -135,7 +158,7 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
         </button>
       ))}
 
-      {/* Focused note view — one note, full text, nothing else in the way */}
+      {/* Focused view — one message, full text, nothing else in the way */}
       {selected && (
         <div className="modal-overlay" style={{ alignItems: 'center', padding: 16 }}
           onClick={e => e.target === e.currentTarget && setSelected(null)}>
@@ -143,7 +166,7 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 14, borderBottom: '1px solid var(--border)' }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--navy)' }}>
-                📌 {selected.target_type === 'shift' ? (selected.shift?.name || 'Shift') + ' note' : 'Note for managers'}
+                📌 Message {targetLabel(selected)}
               </div>
               <button onClick={() => setSelected(null)} aria-label="Close" disabled={busyId === selected.id} style={{
                 background: 'var(--off-white)', border: 'none', borderRadius: '50%', width: 30, height: 30,
@@ -159,7 +182,7 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
             }}>{selected.body}</div>
 
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
-              Written by <strong style={{ color: 'var(--text-primary)' }}>{authorName(selected)}</strong>
+              From <strong style={{ color: 'var(--text-primary)' }}>{personName(selected.author)}</strong>
               <br />{fullWhen(selected.created_at)} · {timeAgo(selected.created_at)}
             </div>
 
@@ -177,19 +200,10 @@ export default function NotesPanel({ siteId, mode, shiftId, shiftName }) {
             </div>
 
             <div style={{ fontSize: 11, color: 'var(--text-light)', textAlign: 'center', marginTop: 10 }}>
-              Marking done clears this note for everyone.
+              Marking done clears this message for everyone.
             </div>
           </div>
         </div>
-      )}
-
-      {composing && (
-        <ComposeNote
-          siteId={siteId} authorId={staff.id} shifts={shifts}
-          defaultShiftId={mode === 'shift' ? shiftId : null}
-          onClose={() => setComposing(false)}
-          onSaved={loadNotes}
-        />
       )}
     </div>
   )

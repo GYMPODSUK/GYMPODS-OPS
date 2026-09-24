@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import NotesPanel from '../notes/NotesPanel'
 
 const SHIFT_ICONS = {
   'Early Morning': '🌅', 'Mid Shift': '☀️', 'Evening': '🌆', 'Overnight': '🌙',
@@ -147,6 +148,10 @@ export default function ShiftSelector({ onSelectShift }) {
           {isWeekend && <span style={{ marginLeft: 8, color: 'var(--aqua)', fontWeight: 700 }}>Weekend</span>}
         </div>
       </div>
+
+      {/* Team messages addressed to this person — first thing they see after
+          logging in, before picking a shift. Hidden when there are none. */}
+      <NotesPanel siteId={staff.active_site_id || staff.site_id} mode="me" />
 
       {/* Location banners */}
       {locationStatus === 'on-site' && (

@@ -72,7 +72,9 @@ function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
             <Icon name="logs" size={20} />
           </button>
         )}
-        {isFOH && (
+        {/* Compose is for everyone now — floor staff AND managers/HQ.
+            Shown whenever a compose handler is passed in. */}
+        {onCompose && (
           <button className="btn-icon" onClick={onCompose} aria-label="New message"
             style={{ color: '#D8F789' }}>
             <Icon name="compose" size={20} />
@@ -228,7 +230,7 @@ export default function App() {
     }
     return (
       <div className="app-shell">
-        <Header staff={staff} onLogout={handleLogout} isFOH={false} />
+        <Header staff={staff} onLogout={handleLogout} onCompose={() => setComposing(true)} isFOH={false} />
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {managerTab !== homeTab && (
             <button onClick={() => navigate(homeTab)} style={{
@@ -240,6 +242,9 @@ export default function App() {
           {renderTab()}
         </div>
         <ManagerNav tab={managerTab} setTab={navigate} isHQ={isHQ()} unreadUrgent={unreadUrgent} hasUnread={hasUnread} />
+        {composing && (
+          <ComposeMessage onClose={() => setComposing(false)} />
+        )}
         {showCoverShift && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(13,33,55,0.4)', display: 'flex', justifyContent: 'center' }}>
             <div style={{ width: '100%', maxWidth: 480, height: '100%', background: 'var(--surface)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
