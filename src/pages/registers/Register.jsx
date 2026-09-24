@@ -6,8 +6,86 @@ import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { SEVERITY_OPTIONS } from '../../lib/registers'
+import { useT, useLanguage } from '../../lib/i18n'
 
 const STORAGE_BUCKET = 'record-images'
+
+// Screen wording in all five languages. Form names, fields, options and
+// statuses come already translated in `config` (see src/lib/registers.js).
+// Phrasing avoids "New …/Log …" + noun so it reads right in every language
+// (French/Spanish/Italian/Portuguese nouns change the adjective's gender).
+const TEXT = {
+  en: {
+    new: '+ New', all: 'All', this_gym: 'This gym', all_gyms: 'All gyms',
+    empty: 'No {label} logged{view}.', empty_view: ' in this view',
+    mins_ago: '{n}m ago', hrs_ago: '{n}h ago', days_ago: '{n}d ago',
+    logged_on: 'Logged {date}', signed_in: 'Signed in {date}', by: ' by {name}', marked_by: ' · marked by {name}',
+    photos_n: 'Photos ({n})', enter_name: 'Enter name…', cancel: 'Cancel', confirm: 'Confirm',
+    saving: 'Saving…', updating: 'Updating…', mark: 'Mark {status}', close: 'Close',
+    updated: 'Updated ✓', update_failed: 'Update failed', saved: '{item} logged ✓',
+    add_title: 'New {item}', log_btn: 'Log {item}', select: 'Select…',
+    photos_optional: 'Photos (optional)', photo_tap: 'Tap to take photo or choose from library',
+    fill_in: 'Please fill in "{field}"', save_failed: "Couldn't save — {msg}",
+    generic_error: 'Something went wrong — please try again',
+    photo_warning: "{item} logged, but {n} photo(s) didn't upload",
+  },
+  fr: {
+    new: '+ Nouveau', all: 'Tous', this_gym: 'Cette salle', all_gyms: 'Toutes les salles',
+    empty: "Rien d'enregistré ici pour l'instant.", empty_view: '',
+    mins_ago: 'il y a {n} min', hrs_ago: 'il y a {n} h', days_ago: 'il y a {n} j',
+    logged_on: 'Enregistré le {date}', signed_in: 'Arrivée le {date}', by: ' par {name}', marked_by: ' · noté par {name}',
+    photos_n: 'Photos ({n})', enter_name: 'Saisissez le nom…', cancel: 'Annuler', confirm: 'Confirmer',
+    saving: 'Enregistrement…', updating: 'Mise à jour…', mark: 'Passer à : {status}', close: 'Fermer',
+    updated: 'Mis à jour ✓', update_failed: 'Échec de la mise à jour', saved: 'Enregistrement effectué ✓',
+    add_title: 'Ajouter : {item}', log_btn: 'Enregistrer', select: 'Sélectionner…',
+    photos_optional: 'Photos (facultatif)', photo_tap: 'Touchez pour prendre une photo ou choisir dans la galerie',
+    fill_in: 'Veuillez remplir « {field} »', save_failed: "Impossible d'enregistrer — {msg}",
+    generic_error: 'Une erreur est survenue — veuillez réessayer',
+    photo_warning: "Enregistré, mais {n} photo(s) n'ont pas été envoyées",
+  },
+  es: {
+    new: '+ Nuevo', all: 'Todos', this_gym: 'Este gimnasio', all_gyms: 'Todos los gimnasios',
+    empty: 'Todavía no hay nada registrado aquí.', empty_view: '',
+    mins_ago: 'hace {n} min', hrs_ago: 'hace {n} h', days_ago: 'hace {n} d',
+    logged_on: 'Registrado el {date}', signed_in: 'Entrada: {date}', by: ' por {name}', marked_by: ' · marcado por {name}',
+    photos_n: 'Fotos ({n})', enter_name: 'Escribe el nombre…', cancel: 'Cancelar', confirm: 'Confirmar',
+    saving: 'Guardando…', updating: 'Actualizando…', mark: 'Cambiar a: {status}', close: 'Cerrar',
+    updated: 'Actualizado ✓', update_failed: 'No se ha podido actualizar', saved: 'Guardado ✓',
+    add_title: 'Añadir: {item}', log_btn: 'Registrar', select: 'Seleccionar…',
+    photos_optional: 'Fotos (opcional)', photo_tap: 'Toca para hacer una foto o elegir de la galería',
+    fill_in: 'Rellena «{field}»', save_failed: 'No se ha podido guardar: {msg}',
+    generic_error: 'Algo ha fallado: inténtalo de nuevo',
+    photo_warning: 'Guardado, pero {n} foto(s) no se han subido',
+  },
+  it: {
+    new: '+ Nuovo', all: 'Tutti', this_gym: 'Questa palestra', all_gyms: 'Tutte le palestre',
+    empty: 'Ancora niente di registrato qui.', empty_view: '',
+    mins_ago: '{n} min fa', hrs_ago: '{n} h fa', days_ago: '{n} g fa',
+    logged_on: 'Registrato il {date}', signed_in: 'Ingresso: {date}', by: ' da {name}', marked_by: ' · segnato da {name}',
+    photos_n: 'Foto ({n})', enter_name: 'Inserisci il nome…', cancel: 'Annulla', confirm: 'Conferma',
+    saving: 'Salvataggio…', updating: 'Aggiornamento…', mark: 'Imposta: {status}', close: 'Chiudi',
+    updated: 'Aggiornato ✓', update_failed: 'Aggiornamento non riuscito', saved: 'Salvato ✓',
+    add_title: 'Aggiungi: {item}', log_btn: 'Registra', select: 'Seleziona…',
+    photos_optional: 'Foto (facoltative)', photo_tap: 'Tocca per scattare una foto o scegliere dalla galleria',
+    fill_in: 'Compila «{field}»', save_failed: 'Impossibile salvare — {msg}',
+    generic_error: 'Qualcosa è andato storto — riprova',
+    photo_warning: 'Salvato, ma {n} foto non sono state caricate',
+  },
+  pt: {
+    new: '+ Novo', all: 'Todos', this_gym: 'Este ginásio', all_gyms: 'Todos os ginásios',
+    empty: 'Ainda não há nada registado aqui.', empty_view: '',
+    mins_ago: 'há {n} min', hrs_ago: 'há {n} h', days_ago: 'há {n} d',
+    logged_on: 'Registado a {date}', signed_in: 'Entrada: {date}', by: ' por {name}', marked_by: ' · marcado por {name}',
+    photos_n: 'Fotografias ({n})', enter_name: 'Introduza o nome…', cancel: 'Cancelar', confirm: 'Confirmar',
+    saving: 'A guardar…', updating: 'A atualizar…', mark: 'Mudar para: {status}', close: 'Fechar',
+    updated: 'Atualizado ✓', update_failed: 'Falha na atualização', saved: 'Guardado ✓',
+    add_title: 'Adicionar: {item}', log_btn: 'Registar', select: 'Selecionar…',
+    photos_optional: 'Fotografias (opcional)', photo_tap: 'Toque para tirar uma fotografia ou escolher da galeria',
+    fill_in: 'Preencha «{field}»', save_failed: 'Não foi possível guardar — {msg}',
+    generic_error: 'Algo correu mal — tente novamente',
+    photo_warning: 'Guardado, mas {n} fotografia(s) não foram carregadas',
+  },
+}
 
 // ── datetime-local helpers ─────────────────────────────────────────
 const pad = (n) => String(n).padStart(2, '0')
@@ -19,6 +97,9 @@ const toISO = (localValue) => (localValue ? new Date(localValue).toISOString() :
 
 export default function Register({ config, onBack, embedded = false, onChanged }) {
   const { staff, isHQ } = useAuth()
+  const t = useT(TEXT)
+  const { locale } = useLanguage()
+  const sevOptions = config.severityOptions || SEVERITY_OPTIONS
   const [records, setRecords]   = useState([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState(config.statuses[0].value)
@@ -105,10 +186,10 @@ export default function Register({ config, onBack, embedded = false, onChanged }
       setSelected(prev => ({ ...prev, ...update, actioner: me, ...(update.resolved_by ? { resolver: me } : {}) }))
       setCollectingStatus(null)
       setCollectValue('')
-      showToast('Updated ✓')
+      showToast(t('updated'))
       onChanged?.()
     } else {
-      console.error(error); showToast('Update failed', 'error')
+      console.error(error); showToast(t('update_failed'), 'error')
     }
     setBusy(false)
   }
@@ -132,23 +213,23 @@ export default function Register({ config, onBack, embedded = false, onChanged }
   // ── formatting ────────────────────────────────────────────────────
   const timeAgo = (ts) => {
     const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000)
-    if (mins < 60) return `${mins}m ago`
+    if (mins < 60) return t('mins_ago', { n: mins })
     const hrs = Math.floor(mins / 60)
-    if (hrs < 24) return `${hrs}h ago`
-    return `${Math.floor(hrs / 24)}d ago`
+    if (hrs < 24) return t('hrs_ago', { n: hrs })
+    return t('days_ago', { n: Math.floor(hrs / 24) })
   }
-  const formatDate = (ts) => new Date(ts).toLocaleDateString('en-GB', {
+  const formatDate = (ts) => new Date(ts).toLocaleDateString(locale, {
     day: 'numeric', month: 'short', year: 'numeric',
   })
-  const formatDateTime = (ts) => new Date(ts).toLocaleString('en-GB', {
+  const formatDateTime = (ts) => new Date(ts).toLocaleString(locale, {
     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   })
   // Registers with showTimes (Visitor book) display time of day on in/out; others are date-only.
   const fmt = config.showTimes ? formatDateTime : formatDate
   const statusMeta   = (v) => config.statuses.find(s => s.value === v) || { label: v, color: 'var(--text-light)', bg: 'var(--off-white)' }
-  const severityMeta = (v) => SEVERITY_OPTIONS.find(s => s.value === v)
+  const severityMeta = (v) => sevOptions.find(s => s.value === v)
 
-  const filters = [...config.statuses, { value: 'all', label: 'All' }]
+  const filters = [...config.statuses, { value: 'all', label: t('all') }]
 
   return (
     <>
@@ -178,15 +259,15 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                 }}>{f.label}</button>
               ))}
             </div>
-            <button className="btn btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowAdd(true)}>+ New</button>
+            <button className="btn btn-primary btn-sm" style={{ flexShrink: 0 }} onClick={() => setShowAdd(true)}>{t('new')}</button>
           </div>
 
           {/* HQ scope toggle — this gym (default) vs every gym */}
           {isHQ() && scopedSiteId && (
             <div style={{ display: 'flex', gap: 6, paddingBottom: 12 }}>
               {[
-                { v: false, label: staff.active_site?.name || 'This gym' },
-                { v: true,  label: 'All gyms' },
+                { v: false, label: staff.active_site?.name || t('this_gym') },
+                { v: true,  label: t('all_gyms') },
               ].map(o => (
                 <button key={String(o.v)} onClick={() => setAllSites(o.v)} style={{
                   padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
@@ -207,7 +288,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
           ) : records.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">{config.icon}</div>
-              <div className="empty-state-text">No {config.label.toLowerCase()} logged{filter !== 'all' ? ' in this view' : ''}.</div>
+              <div className="empty-state-text">{t('empty', { label: config.label.toLowerCase(), view: filter !== 'all' ? t('empty_view') : '' })}</div>
             </div>
           ) : (
             records.map(rec => {
@@ -250,7 +331,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
           onSaved={(warning) => {
             setShowAdd(false)
             if (warning) showToast(warning, 'error', 6000)
-            else showToast(`${config.singular} logged ✓`)
+            else showToast(t('saved', { item: config.singular }))
             onChanged?.() /* realtime refreshes list */
           }}
         />
@@ -267,7 +348,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                 <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--navy)', lineHeight: 1.3 }}>
                   {config.icon} {config.singular}
                 </div>
-                <button onClick={() => setSelected(null)} aria-label="Close" style={{
+                <button onClick={() => setSelected(null)} aria-label={t('close')} style={{
                   background: 'var(--off-white)', border: 'none', borderRadius: '50%', width: 30, height: 30,
                   fontSize: 15, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -280,8 +361,8 @@ export default function Register({ config, onBack, embedded = false, onChanged }
               </div>
 
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                {config.showTimes ? 'Signed in' : 'Logged'} {fmt(selected.created_at)}
-                {selected.logged && ` by ${selected.logged.first_name} ${selected.logged.last_name}`}
+                {t(config.showTimes ? 'signed_in' : 'logged_on', { date: fmt(selected.created_at) })}
+                {selected.logged && t('by', { name: `${selected.logged.first_name} ${selected.logged.last_name}` })}
                 {!siteScoped && selected.sites && ` · ${selected.sites.name}`}
               </div>
 
@@ -308,7 +389,7 @@ export default function Register({ config, onBack, embedded = false, onChanged }
               {/* Photos */}
               {config.hasImages && detailImages.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Photos ({detailImages.length})</div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('photos_n', { n: detailImages.length })}</div>
                   <div className="image-preview-grid">
                     {detailImages.map(img => (
                       <img key={img.id} src={img.image_url} className="image-preview" alt=""
@@ -324,15 +405,15 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                   <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
                     ✓ {config.promptOnStatus.label}: {selected[config.promptOnStatus.field]}
                     {config.promptOnStatus.timestampField && selected[config.promptOnStatus.timestampField] && ` · ${formatDate(selected[config.promptOnStatus.timestampField])}`}
-                    {selected.actioner && ` · marked by ${selected.actioner.first_name} ${selected.actioner.last_name}`}
+                    {selected.actioner && t('marked_by', { name: `${selected.actioner.first_name} ${selected.actioner.last_name}` })}
                   </div>
                 </div>
               )}
               {config.resolveStatus && selected.status === config.resolveStatus && selected.resolved_at && (
                 <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
                   <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-                    ✓ {statusMeta(config.resolveStatus).label} {fmt(selected.resolved_at)}
-                    {selected.resolver && ` by ${selected.resolver.first_name} ${selected.resolver.last_name}`}
+                    ✓ {statusMeta(config.resolveStatus).label} · {fmt(selected.resolved_at)}
+                    {selected.resolver && t('by', { name: `${selected.resolver.first_name} ${selected.resolver.last_name}` })}
                   </div>
                 </div>
               )}
@@ -342,10 +423,10 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                 <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 12 }}>
                   <label className="form-label">{config.promptOnStatus.label}</label>
                   <input className="form-input" value={collectValue} onChange={e => setCollectValue(e.target.value)}
-                    placeholder="Enter name…" autoFocus />
+                    placeholder={t('enter_name')} autoFocus />
                   <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                    <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => setCollectingStatus(null)} disabled={busy}>Cancel</button>
-                    <button className="btn btn-success btn-sm" style={{ flex: 2 }} onClick={confirmCollect} disabled={busy}>{busy ? 'Saving…' : 'Confirm'}</button>
+                    <button className="btn btn-outline btn-sm" style={{ flex: 1 }} onClick={() => setCollectingStatus(null)} disabled={busy}>{t('cancel')}</button>
+                    <button className="btn btn-success btn-sm" style={{ flex: 2 }} onClick={confirmCollect} disabled={busy}>{busy ? t('saving') : t('confirm')}</button>
                   </div>
                 </div>
               )}
@@ -359,11 +440,11 @@ export default function Register({ config, onBack, embedded = false, onChanged }
                       <button key={s.value} className={`btn ${isResolve ? 'btn-success' : ''}`} disabled={busy}
                         onClick={() => handleStatusClick(s.value)}
                         style={isResolve ? {} : { background: s.bg, color: s.color, border: `1px solid ${s.color}33` }}>
-                        {busy ? 'Updating…' : `Mark ${s.label}`}
+                        {busy ? t('updating') : t('mark', { status: s.label })}
                       </button>
                     )
                   })}
-                  <button className="btn btn-outline" onClick={() => setSelected(null)}>Close</button>
+                  <button className="btn btn-outline" onClick={() => setSelected(null)}>{t('close')}</button>
                 </div>
               )}
             </div>
@@ -378,6 +459,8 @@ export default function Register({ config, onBack, embedded = false, onChanged }
 
 // ── Add-record form (config-driven) ─────────────────────────────────
 function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
+  const t = useT(TEXT)
+  const sevOptions = config.severityOptions || SEVERITY_OPTIONS
   const initial = {}
   config.fields.forEach(f => {
     if (f.type === 'severity') initial[f.name] = 'medium'
@@ -424,7 +507,7 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
     // required-field validation
     for (const f of config.fields) {
       if (f.required && !String(form[f.name] || '').trim()) {
-        setError(`Please fill in "${f.label}"`); return
+        setError(t('fill_in', { field: f.label })); return
       }
     }
     setSaving(true); setError(null)
@@ -445,7 +528,7 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
       rec = data
     } catch (err) {
       console.error(`${config.table} insert failed:`, err)
-      setError(err?.message ? `Couldn't save — ${err.message}` : 'Something went wrong — please try again')
+      setError(err?.message ? t('save_failed', { msg: err.message }) : t('generic_error'))
       setSaving(false)
       return
     }
@@ -470,7 +553,7 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
         }
       }
       if (failed > 0) {
-        photoWarning = `${config.singular} logged, but ${failed} photo${failed > 1 ? 's' : ''} didn't upload`
+        photoWarning = t('photo_warning', { item: config.singular, n: failed })
           + (lastMsg ? ` — ${lastMsg}` : '')
       }
     }
@@ -483,14 +566,14 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
     if (f.type === 'severity') {
       return (
         <select className="form-input" value={form[f.name]} onChange={e => setField(f.name, e.target.value)}>
-          {SEVERITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {sevOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       )
     }
     if (f.type === 'select') {
       return (
         <select className="form-input" value={form[f.name]} onChange={e => setField(f.name, e.target.value)}>
-          <option value="">Select…</option>
+          <option value="">{t('select')}</option>
           {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       )
@@ -517,8 +600,8 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
     <div className="modal-overlay" style={{ alignItems: 'center', padding: 16 }} onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-sheet" style={{ maxHeight: '90vh', overflowY: 'auto', borderRadius: 'var(--radius-xl)', margin: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 12, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--navy)' }}>{config.icon} New {config.singular}</div>
-          <button onClick={onClose} aria-label="Close" disabled={saving} style={{
+          <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--navy)' }}>{config.icon} {t('add_title', { item: config.singular })}</div>
+          <button onClick={onClose} aria-label={t('close')} disabled={saving} style={{
             background: 'var(--off-white)', border: 'none', borderRadius: '50%', width: 30, height: 30,
             fontSize: 15, color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -540,9 +623,9 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
 
         {config.hasImages && (
           <div className="form-group">
-            <label className="form-label">Photos (optional)</label>
+            <label className="form-label">{t('photos_optional')}</label>
             <input type="file" accept="image/*" multiple capture="environment" ref={fileRef} style={{ display: 'none' }} onChange={addImages} />
-            <div className="image-upload-area" onClick={() => fileRef.current?.click()}>📷 Tap to take photo or choose from library</div>
+            <div className="image-upload-area" onClick={() => fileRef.current?.click()}>📷 {t('photo_tap')}</div>
             {images.length > 0 && (
               <div className="image-preview-grid" style={{ marginTop: 10 }}>
                 {images.map((img, i) => (
@@ -565,9 +648,9 @@ function AddRecordForm({ config, scopedSiteId, staffId, onClose, onSaved }) {
         )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-          <button className="btn btn-outline btn-sm" onClick={onClose} style={{ flex: 1 }} disabled={saving}>Cancel</button>
+          <button className="btn btn-outline btn-sm" onClick={onClose} style={{ flex: 1 }} disabled={saving}>{t('cancel')}</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ flex: 2 }}>
-            {saving ? 'Saving…' : `Log ${config.singular}`}
+            {saving ? t('saving') : t('log_btn', { item: config.singular })}
           </button>
         </div>
       </div>
