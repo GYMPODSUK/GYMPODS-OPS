@@ -14,6 +14,47 @@ import Messages from './pages/manager/Messages'
 import HQOverview from './pages/hq/Overview'
 import Sites from './pages/hq/Sites'
 import RegistersHub from './pages/registers/RegistersHub'
+import { useT, LanguagePicker } from './lib/i18n'
+
+// Header, bottom menu and back-bar wording in all five languages.
+// Manager/HQ pages themselves are still English for now (phase 2 of languages).
+const TEXT = {
+  en: {
+    trainee: 'Trainee', cleaner: 'Cleaner', foh: 'FOH', senior_foh: 'Sr. FOH',
+    admin: 'Site Manager', region_manager: 'Region Mgr', hq: 'HQ',
+    nav_dashboard: 'Home', nav_messages: 'Messages', nav_staff: 'Staff', nav_tasks: 'Tasks',
+    nav_shifts: 'Shifts', nav_issues: 'Issues', nav_logs: 'Forms', nav_network: 'Network', nav_sites: 'Sites',
+    cover_shift: 'Cover a shift', forms: 'Forms', new_message: 'New message', log_out: 'Log out', close: 'Close',
+  },
+  fr: {
+    trainee: 'Stagiaire', cleaner: 'Entretien', foh: 'Réception', senior_foh: 'Réception sr',
+    admin: 'Resp. de site', region_manager: 'Resp. région', hq: 'Siège',
+    nav_dashboard: 'Accueil', nav_messages: 'Messages', nav_staff: 'Équipe', nav_tasks: 'Tâches',
+    nav_shifts: 'Services', nav_issues: 'Problèmes', nav_logs: 'Formulaires', nav_network: 'Réseau', nav_sites: 'Sites',
+    cover_shift: 'Couvrir un service', forms: 'Formulaires', new_message: 'Nouveau message', log_out: 'Se déconnecter', close: 'Fermer',
+  },
+  es: {
+    trainee: 'En prácticas', cleaner: 'Limpieza', foh: 'Recepción', senior_foh: 'Recepción sr.',
+    admin: 'Gerente de sede', region_manager: 'Gerente región', hq: 'Central',
+    nav_dashboard: 'Inicio', nav_messages: 'Mensajes', nav_staff: 'Equipo', nav_tasks: 'Tareas',
+    nav_shifts: 'Turnos', nav_issues: 'Incidencias', nav_logs: 'Formularios', nav_network: 'Red', nav_sites: 'Sedes',
+    cover_shift: 'Cubrir un turno', forms: 'Formularios', new_message: 'Nuevo mensaje', log_out: 'Cerrar sesión', close: 'Cerrar',
+  },
+  it: {
+    trainee: 'Tirocinante', cleaner: 'Pulizie', foh: 'Reception', senior_foh: 'Reception sr.',
+    admin: 'Resp. sede', region_manager: 'Resp. regione', hq: 'Direzione',
+    nav_dashboard: 'Home', nav_messages: 'Messaggi', nav_staff: 'Staff', nav_tasks: 'Compiti',
+    nav_shifts: 'Turni', nav_issues: 'Problemi', nav_logs: 'Moduli', nav_network: 'Rete', nav_sites: 'Sedi',
+    cover_shift: 'Coprire un turno', forms: 'Moduli', new_message: 'Nuovo messaggio', log_out: 'Esci', close: 'Chiudi',
+  },
+  pt: {
+    trainee: 'Estagiário', cleaner: 'Limpeza', foh: 'Receção', senior_foh: 'Receção sr.',
+    admin: 'Gestor de unidade', region_manager: 'Gestor regional', hq: 'Sede',
+    nav_dashboard: 'Início', nav_messages: 'Mensagens', nav_staff: 'Equipa', nav_tasks: 'Tarefas',
+    nav_shifts: 'Turnos', nav_issues: 'Problemas', nav_logs: 'Formulários', nav_network: 'Rede', nav_sites: 'Unidades',
+    cover_shift: 'Cobrir um turno', forms: 'Formulários', new_message: 'Nova mensagem', log_out: 'Terminar sessão', close: 'Fechar',
+  },
+}
 
 const Icon = ({ name, size = 22 }) => {
   const icons = {
@@ -33,15 +74,7 @@ const Icon = ({ name, size = 22 }) => {
 }
 
 function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
-  const roleLabel = {
-    trainee:        'Trainee',
-    cleaner:        'Cleaner',
-    foh:            'FOH',
-    senior_foh:     'Sr. FOH',
-    admin:          'Site Manager',
-    region_manager: 'Region Mgr',
-    hq:             'HQ',
-  }
+  const t = useT(TEXT)
   const roleClass = {
     trainee:        'role-foh',
     cleaner:        'role-foh',
@@ -64,23 +97,24 @@ function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
         <div>
           <div className="header-name">{staff.first_name}</div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
-            <span className={`header-role ${roleClass[staff.role] || 'role-foh'}`}>{roleLabel[staff.role] || staff.role}</span>
+            <span className={`header-role ${roleClass[staff.role] || 'role-foh'}`}>{t(staff.role)}</span>
           </div>
         </div>
         {isFOH && (
-          <button className="btn-icon" onClick={onLogs} aria-label="Logs">
+          <button className="btn-icon" onClick={onLogs} aria-label={t('forms')}>
             <Icon name="logs" size={20} />
           </button>
         )}
         {/* Compose is for everyone now — floor staff AND managers/HQ.
             Shown whenever a compose handler is passed in. */}
         {onCompose && (
-          <button className="btn-icon" onClick={onCompose} aria-label="New message"
+          <button className="btn-icon" onClick={onCompose} aria-label={t('new_message')}
             style={{ color: '#D8F789' }}>
             <Icon name="compose" size={20} />
           </button>
         )}
-        <button className="btn-icon" onClick={onLogout} aria-label="Log out">
+        <LanguagePicker />
+        <button className="btn-icon" onClick={onLogout} aria-label={t('log_out')}>
           <Icon name="logout" size={18} />
         </button>
       </div>
@@ -89,6 +123,7 @@ function Header({ staff, onLogout, onCompose, onLogs, isFOH }) {
 }
 
 function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
+  const t = useT(TEXT)
   const tabs = [
     { id: 'dashboard', label: 'Home',     icon: 'dashboard' },
     { id: 'messages',  label: 'Messages', icon: 'messages'  },
@@ -104,11 +139,11 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
   ]
   return (
     <div className="bottom-nav">
-      {tabs.map(t => (
-        <button key={t.id} className={`nav-item ${tab === t.id ? 'active' : ''}`}
-          onClick={() => setTab(t.id)} style={{ position: 'relative' }}>
-          <Icon name={t.icon} size={20} />
-          {t.id === 'messages' && unreadUrgent > 0 && (
+      {tabs.map(tb => (
+        <button key={tb.id} className={`nav-item ${tab === tb.id ? 'active' : ''}`}
+          onClick={() => setTab(tb.id)} style={{ position: 'relative' }}>
+          <Icon name={tb.icon} size={20} />
+          {tb.id === 'messages' && unreadUrgent > 0 && (
             <span style={{
               position: 'absolute', top: 4, right: '50%', transform: 'translateX(10px)',
               background: '#E8301A', color: '#fff', borderRadius: '50%',
@@ -116,13 +151,13 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>{unreadUrgent}</span>
           )}
-          {t.id === 'messages' && unreadUrgent === 0 && hasUnread && (
+          {tb.id === 'messages' && unreadUrgent === 0 && hasUnread && (
             <span style={{
               position: 'absolute', top: 5, right: '50%', transform: 'translateX(9px)',
               background: '#E8301A', borderRadius: '50%', width: 9, height: 9,
             }} />
           )}
-          {t.label}
+          {t(`nav_${tb.id}`)}
         </button>
       ))}
     </div>
@@ -131,6 +166,7 @@ function ManagerNav({ tab, setTab, isHQ, unreadUrgent, hasUnread }) {
 
 export default function App() {
   const { staff, loading, logout, isAdmin, isHQ } = useAuth()
+  const t = useT(TEXT)
   const [selectedShift, setSelectedShift] = useState(null)
   const [locationData, setLocationData]   = useState(null)
   // HQ + Region Mgr land on 'network' overview by default;
@@ -198,7 +234,7 @@ export default function App() {
   // ── Manager / Region Mgr / HQ view ─────────────────────────────────────
   if (isAdmin()) {
     const homeTab   = (staff.role === 'hq' || staff.role === 'region_manager') ? 'network' : 'dashboard'
-    const homeLabel = homeTab === 'network' ? 'Network' : 'Home'
+    const homeLabel = homeTab === 'network' ? t('nav_network') : t('nav_dashboard')
 
     // Single navigation entry point. Pages call onNavigate('logs', 'lost_found')
     // to jump straight to one register; onNavigate('issues') etc. as before.
@@ -252,8 +288,8 @@ export default function App() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0,
               }}>
-                <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--navy)' }}>Cover a shift</div>
-                <button className="btn-icon" onClick={closeCoverShift} aria-label="Close"
+                <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--navy)' }}>{t('cover_shift')}</div>
+                <button className="btn-icon" onClick={closeCoverShift} aria-label={t('close')}
                   style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy)' }}>
                   ✕
                 </button>
