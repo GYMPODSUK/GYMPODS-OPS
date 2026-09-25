@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
 import TaskImageStrip, { fetchTaskImages } from '../shared/TaskImages'
-import { useT } from '../../lib/i18n'
+import { useT, useLanguage } from '../../lib/i18n'
+import { translateText } from '../../lib/translate'
 
 const CAT_COLORS = {
   cleaning: '#2A8A8E', health_safety: '#C07010',
@@ -88,7 +89,13 @@ const TEXT = {
 export default function ShiftTasks({ shift, locationData, onBack }) {
   const { staff } = useAuth()
   const t = useT(TEXT)
+  const { lang } = useLanguage()
   const [tasks, setTasks] = useState([])
+  // Task names/descriptions and the shift name are written by managers in
+  // English. For other languages they're translated (DeepL, remembered, so
+  // each text is only translated once). Saved records keep the English.
+  const [tx, setTx] = useState({})
+  const tr = (s) => (s && tx[s]) || s
   const [taskImages, setTaskImages] = useState({})
   const [completions, setCompletions] = useState({})
   const [expanded, setExpanded] = useState(null)
@@ -102,6 +109,18 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
   const today = new Date().toISOString().split('T')[0]
 
   useEffect(() => { loadData() }, [])
+
+  useEffect(() => {
+    if (lang === 'en') { setTx({}); return }
+    const texts = [...new Set([shift.name, ...tasks.map(x => x.name), ...tasks.map(x => x.description)]
+      .filter(x => x && x.trim()))]
+    if (texts.length === 0) return
+    let alive = true
+    Promise.all(texts.map(s => translateText(s, lang).then(r => [s, r?.text])))
+      .then(pairs => { if (alive) setTx(Object.fromEntries(pairs.filter(([, v]) => v))) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, tasks, shift.name])
 
   const loadData = async () => {
     setLoading(true)
@@ -236,7 +255,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
         }}>
           ‹ {t('all_shifts')}
         </button>
-        <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--white)' }}>{shift.name}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--white)' }}>{tr(shift.name)}</div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
           {t('tasks_done', { done: completedCount, total: tasks.length })}
           {locationData && !locationData.onSite && locationData.latitude && (
@@ -273,7 +292,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                 >
                   <div className="task-dot" style={{ background: CAT_COLORS[task.category] || '#888' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className={`task-name ${status}`}>{task.name}</div>
+                    <div className={`task-name ${status}`}>{tr(task.name)}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 5 }}>
                       <span className={`badge badge-${status}`}>
                         {status === 'pending' ? `○ ${t('pending')}` : status === 'completed' ? `✓ ${t('done')}` : `⚑ ${t('flagged')}`}
@@ -308,7 +327,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                         fontSize: 13, color: 'var(--text-secondary)',
                         lineHeight: 1.5, padding: '4px 0 8px'
                       }}>
-                        {task.description}
+                        {tr(task.description)}
                       </div>
                     )}
 
@@ -345,7 +364,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
               {activeModal.mode === 'flag' ? `⚑ ${t('title_flag')}` : `✓ ${t('title_complete')}`}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.4 }}>
-              {activeModal.task.name}
+              {tr(activeModal.task.name)}
             </div>
 
             <div className="form-group">
