@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
 import { useT, useLanguage } from '../../lib/i18n'
+import { translateText } from '../../lib/translate'
 
 // Shift selector wording in all five languages.
 // Shift NAMES (e.g. "Early Morning") are set by managers, so they stay as
@@ -108,6 +109,19 @@ export default function ShiftSelector({ onSelectShift }) {
   }
 
   useEffect(() => { loadData() }, [])
+
+  // Shift names are typed by managers in English — translate them for other
+  // languages (DeepL, remembered). The shift itself is unchanged.
+  const [tx, setTx] = useState({})
+  useEffect(() => {
+    if (lang === 'en') { setTx({}); return }
+    const names = [...new Set(shifts.map(x => x.name).filter(Boolean))]
+    if (names.length === 0) return
+    let alive = true
+    Promise.all(names.map(n => translateText(n, lang).then(r => [n, r?.text])))
+      .then(pairs => { if (alive) setTx(Object.fromEntries(pairs.filter(([, v]) => v))) })
+    return () => { alive = false }
+  }, [lang, shifts])
   useEffect(() => { if (siteData) checkLocation() }, [siteData])
 
   const loadData = async () => {
@@ -262,7 +276,7 @@ export default function ShiftSelector({ onSelectShift }) {
                   {SHIFT_ICONS[shift.name] || '🕐'}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{shift.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{tx[shift.name] || shift.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                     {formatTime(shift.start_time)} – {formatTime(shift.end_time)}
                   </div>
