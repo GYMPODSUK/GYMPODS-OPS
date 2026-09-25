@@ -6,11 +6,22 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { REGISTERS, REGISTER_ORDER } from '../../lib/registers'
+import { REGISTERS, REGISTER_ORDER, localiseRegister, localiseGroup } from '../../lib/registers'
+import { useT, useLanguage } from '../../lib/i18n'
 import Register from './Register'
+
+const TEXT = {
+  en: { title: 'Forms & Registers',        done: 'Done' },
+  fr: { title: 'Formulaires et registres', done: 'Terminé' },
+  es: { title: 'Formularios y registros',  done: 'Listo' },
+  it: { title: 'Moduli e registri',        done: 'Fatto' },
+  pt: { title: 'Formulários e registos',   done: 'Concluído' },
+}
 
 export default function RegistersHub({ onExit, initialKey }) {
   const { staff } = useAuth()
+  const t = useT(TEXT)
+  const { lang } = useLanguage()
   // initialKey lets a Network/Home chip deep-link straight to one register.
   const [active, setActive] = useState(
     initialKey && REGISTERS[initialKey] ? initialKey : REGISTER_ORDER[0]
@@ -43,9 +54,9 @@ export default function RegistersHub({ onExit, initialKey }) {
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '14px 16px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
-            Forms &amp; Registers
+            {t('title')}
           </div>
-          {onExit && <button className="btn btn-outline btn-sm" onClick={onExit}>Done</button>}
+          {onExit && <button className="btn btn-outline btn-sm" onClick={onExit}>{t('done')}</button>}
         </div>
         <select
           className="form-input"
@@ -60,9 +71,9 @@ export default function RegistersHub({ onExit, initialKey }) {
               return acc
             }, {})
           ).map(([group, keys]) => (
-            <optgroup key={group} label={group}>
+            <optgroup key={group} label={localiseGroup(group, lang)}>
               {keys.map(key => {
-                const cfg = REGISTERS[key]
+                const cfg = localiseRegister(REGISTERS[key], lang)
                 const c = counts[key]
                 return (
                   <option key={key} value={key}>
@@ -77,7 +88,8 @@ export default function RegistersHub({ onExit, initialKey }) {
 
       {/* Selected register — remounts on change to reset its filter/state */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <Register key={active} config={REGISTERS[active]} embedded onChanged={loadCounts} />
+        {/* Wording follows the chosen language; the underlying form is the same. */}
+        <Register key={active} config={localiseRegister(REGISTERS[active], lang)} embedded onChanged={loadCounts} />
       </div>
     </div>
   )

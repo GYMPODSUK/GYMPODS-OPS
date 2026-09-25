@@ -1,5 +1,14 @@
 import React, { useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useT } from '../../lib/i18n'
+
+const TEXT = {
+  en: { how_it_should_look: 'How it should look', close: 'Close' },
+  fr: { how_it_should_look: 'Résultat attendu',   close: 'Fermer' },
+  es: { how_it_should_look: 'Cómo debe quedar',   close: 'Cerrar' },
+  it: { how_it_should_look: 'Come deve risultare', close: 'Chiudi' },
+  pt: { how_it_should_look: 'Como deve ficar',    close: 'Fechar' },
+}
 
 export const MAX_TASK_IMAGES = 6
 
@@ -31,6 +40,7 @@ export async function fetchTaskImages(taskIds) {
  */
 export default function TaskImageStrip({ images, size = 56, showLabel = false }) {
   const [openAt, setOpenAt] = useState(null)
+  const t = useT(TEXT)
 
   if (!images || images.length === 0) return null
 
@@ -44,7 +54,7 @@ export default function TaskImageStrip({ images, size = 56, showLabel = false })
           fontSize: 11, fontWeight: 700, color: 'var(--text-light)',
           textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6,
         }}>
-          How it should look
+          {t('how_it_should_look')}
         </div>
       )}
 
@@ -99,7 +109,7 @@ export default function TaskImageStrip({ images, size = 56, showLabel = false })
             background: 'rgba(255,255,255,0.12)', color: 'var(--white)', border: 'none',
             borderRadius: 'var(--radius-md)', padding: '10px 22px', fontSize: 14,
             fontWeight: 700, cursor: 'pointer',
-          }}>Close</button>
+          }}>{t('close')}</button>
         </div>
       )}
     </>

@@ -3,19 +3,99 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
 import TaskImageStrip, { fetchTaskImages } from '../shared/TaskImages'
+import { useT, useLanguage } from '../../lib/i18n'
+import { translateText } from '../../lib/translate'
 
 const CAT_COLORS = {
   cleaning: '#2A8A8E', health_safety: '#C07010',
   maintenance: '#5A4A9A', opening_closing: '#2A5A8E', other: '#4A6A7A',
 }
-const CAT_LABELS = {
-  cleaning: 'Cleaning', health_safety: 'H&S',
-  maintenance: 'Maintenance', opening_closing: 'Opening/Closing', other: 'Other',
+
+// Task screen wording in all five languages. Task NAMES and descriptions are
+// written by managers, so they stay as typed for now (later task-content batch).
+const TEXT = {
+  en: {
+    cat_cleaning: 'Cleaning', cat_health_safety: 'H&S', cat_maintenance: 'Maintenance',
+    cat_opening_closing: 'Opening/Closing', cat_other: 'Other',
+    all_shifts: 'All shifts', tasks_done: '{done} of {total} tasks completed', off_site: 'Off-site',
+    no_tasks: 'No tasks assigned to this shift yet.',
+    pending: 'Pending', done: 'Done', flagged: 'Flagged',
+    complete: 'Complete', flag_issue: 'Flag Issue',
+    title_flag: 'Flag an issue', title_complete: 'Complete task',
+    describe_issue: 'Describe the issue', add_comment: 'Add a comment (optional)',
+    ph_issue: 'What is the issue? Where exactly?', ph_comment: 'Any notes…',
+    add_photos: 'Add photos (optional)', photo_tap: 'Tap to take photo or choose from library',
+    cancel: 'Cancel', saving: 'Saving…', submit_issue: 'Submit Issue', mark_complete: 'Mark Complete',
+    toast_flagged: 'Issue flagged', toast_done: 'Task completed', toast_error: 'Something went wrong — try again',
+  },
+  fr: {
+    cat_cleaning: 'Nettoyage', cat_health_safety: 'Santé & sécurité', cat_maintenance: 'Maintenance',
+    cat_opening_closing: 'Ouverture/Fermeture', cat_other: 'Autre',
+    all_shifts: 'Tous les services', tasks_done: '{done} sur {total} tâches effectuées', off_site: 'Hors site',
+    no_tasks: "Aucune tâche attribuée à ce service pour l'instant.",
+    pending: 'À faire', done: 'Fait', flagged: 'Signalé',
+    complete: 'Terminer', flag_issue: 'Signaler un problème',
+    title_flag: 'Signaler un problème', title_complete: 'Terminer la tâche',
+    describe_issue: 'Décrivez le problème', add_comment: 'Ajouter un commentaire (facultatif)',
+    ph_issue: 'Quel est le problème ? Où exactement ?', ph_comment: 'Remarques…',
+    add_photos: 'Ajouter des photos (facultatif)', photo_tap: 'Touchez pour prendre une photo ou choisir dans la galerie',
+    cancel: 'Annuler', saving: 'Enregistrement…', submit_issue: 'Envoyer le signalement', mark_complete: 'Marquer comme terminé',
+    toast_flagged: 'Problème signalé', toast_done: 'Tâche terminée', toast_error: 'Une erreur est survenue — réessayez',
+  },
+  es: {
+    cat_cleaning: 'Limpieza', cat_health_safety: 'Seguridad y salud', cat_maintenance: 'Mantenimiento',
+    cat_opening_closing: 'Apertura/Cierre', cat_other: 'Otro',
+    all_shifts: 'Todos los turnos', tasks_done: '{done} de {total} tareas completadas', off_site: 'Fuera del centro',
+    no_tasks: 'Todavía no hay tareas asignadas a este turno.',
+    pending: 'Pendiente', done: 'Hecho', flagged: 'Incidencia',
+    complete: 'Completar', flag_issue: 'Informar de un problema',
+    title_flag: 'Informar de un problema', title_complete: 'Completar tarea',
+    describe_issue: 'Describe el problema', add_comment: 'Añade un comentario (opcional)',
+    ph_issue: '¿Cuál es el problema? ¿Dónde exactamente?', ph_comment: 'Notas…',
+    add_photos: 'Añade fotos (opcional)', photo_tap: 'Toca para hacer una foto o elegir de la galería',
+    cancel: 'Cancelar', saving: 'Guardando…', submit_issue: 'Enviar problema', mark_complete: 'Marcar como hecha',
+    toast_flagged: 'Problema informado', toast_done: 'Tarea completada', toast_error: 'Algo ha fallado: inténtalo de nuevo',
+  },
+  it: {
+    cat_cleaning: 'Pulizia', cat_health_safety: 'Salute e sicurezza', cat_maintenance: 'Manutenzione',
+    cat_opening_closing: 'Apertura/Chiusura', cat_other: 'Altro',
+    all_shifts: 'Tutti i turni', tasks_done: '{done} di {total} compiti completati', off_site: 'Fuori sede',
+    no_tasks: 'Nessun compito ancora assegnato a questo turno.',
+    pending: 'Da fare', done: 'Fatto', flagged: 'Segnalato',
+    complete: 'Completa', flag_issue: 'Segnala un problema',
+    title_flag: 'Segnala un problema', title_complete: 'Completa il compito',
+    describe_issue: 'Descrivi il problema', add_comment: 'Aggiungi un commento (facoltativo)',
+    ph_issue: 'Qual è il problema? Dove esattamente?', ph_comment: 'Note…',
+    add_photos: 'Aggiungi foto (facoltativo)', photo_tap: 'Tocca per scattare una foto o scegliere dalla galleria',
+    cancel: 'Annulla', saving: 'Salvataggio…', submit_issue: 'Invia segnalazione', mark_complete: 'Segna come completato',
+    toast_flagged: 'Problema segnalato', toast_done: 'Compito completato', toast_error: 'Qualcosa è andato storto — riprova',
+  },
+  pt: {
+    cat_cleaning: 'Limpeza', cat_health_safety: 'Saúde e segurança', cat_maintenance: 'Manutenção',
+    cat_opening_closing: 'Abertura/Fecho', cat_other: 'Outro',
+    all_shifts: 'Todos os turnos', tasks_done: '{done} de {total} tarefas concluídas', off_site: 'Fora do local',
+    no_tasks: 'Ainda não há tarefas atribuídas a este turno.',
+    pending: 'Pendente', done: 'Feito', flagged: 'Assinalado',
+    complete: 'Concluir', flag_issue: 'Assinalar problema',
+    title_flag: 'Assinalar um problema', title_complete: 'Concluir tarefa',
+    describe_issue: 'Descreva o problema', add_comment: 'Adicione um comentário (opcional)',
+    ph_issue: 'Qual é o problema? Onde exatamente?', ph_comment: 'Notas…',
+    add_photos: 'Adicione fotografias (opcional)', photo_tap: 'Toque para tirar uma fotografia ou escolher da galeria',
+    cancel: 'Cancelar', saving: 'A guardar…', submit_issue: 'Enviar problema', mark_complete: 'Marcar como concluída',
+    toast_flagged: 'Problema assinalado', toast_done: 'Tarefa concluída', toast_error: 'Algo correu mal — tente novamente',
+  },
 }
 
 export default function ShiftTasks({ shift, locationData, onBack }) {
   const { staff } = useAuth()
+  const t = useT(TEXT)
+  const { lang } = useLanguage()
   const [tasks, setTasks] = useState([])
+  // Task names/descriptions and the shift name are written by managers in
+  // English. For other languages they're translated (DeepL, remembered, so
+  // each text is only translated once). Saved records keep the English.
+  const [tx, setTx] = useState({})
+  const tr = (s) => (s && tx[s]) || s
   const [taskImages, setTaskImages] = useState({})
   const [completions, setCompletions] = useState({})
   const [expanded, setExpanded] = useState(null)
@@ -30,12 +110,24 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
 
   useEffect(() => { loadData() }, [])
 
+  useEffect(() => {
+    if (lang === 'en') { setTx({}); return }
+    const texts = [...new Set([shift.name, ...tasks.map(x => x.name), ...tasks.map(x => x.description)]
+      .filter(x => x && x.trim()))]
+    if (texts.length === 0) return
+    let alive = true
+    Promise.all(texts.map(s => translateText(s, lang).then(r => [s, r?.text])))
+      .then(pairs => { if (alive) setTx(Object.fromEntries(pairs.filter(([, v]) => v))) })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang, tasks, shift.name])
+
   const loadData = async () => {
     setLoading(true)
     const { data: taskData } = await supabase
       .from('shift_tasks').select('order_index, task_library(*)')
       .eq('shift_id', shift.id).order('order_index')
-    let list = taskData?.map(t => t.task_library).filter(Boolean) || []
+    let list = taskData?.map(row => row.task_library).filter(Boolean) || []
     // Exact-role filter: a task with roles set only shows to staff in that
     // set (e.g. a Trainee-only task never shows to FOH, even though FOH
     // outranks Trainee — this isn't a hierarchy). Empty roles = any staff.
@@ -43,11 +135,11 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
     // nothing gets missed while they're standing in.
     const isCoveringManager = ['admin', 'region_manager', 'hq'].includes(staff.role)
     if (!isCoveringManager) {
-      list = list.filter(t => !t.assigned_roles?.length || t.assigned_roles.includes(staff.role))
+      list = list.filter(task => !task.assigned_roles?.length || task.assigned_roles.includes(staff.role))
     }
     setTasks(list)
     // Reference photos the manager attached in the Task Library.
-    setTaskImages(await fetchTaskImages(list.map(t => t.id)))
+    setTaskImages(await fetchTaskImages(list.map(task => task.id)))
 
     const { data: compData } = await supabase
       .from('task_completions').select('*')
@@ -132,12 +224,12 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
       closeModal()
       setExpanded(null)
       showToast(
-        mode === 'flag' ? '⚑ Issue flagged' : '✓ Task completed',
+        mode === 'flag' ? `⚑ ${t('toast_flagged')}` : `✓ ${t('toast_done')}`,
         mode === 'flag' ? 'error' : 'success'
       )
     } catch (err) {
       console.error(err)
-      showToast('Something went wrong — try again', 'error')
+      showToast(t('toast_error'), 'error')
     } finally {
       setSaving(false)
     }
@@ -161,13 +253,13 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
           marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4,
           background: 'none', border: 'none', cursor: 'pointer'
         }}>
-          ‹ All shifts
+          ‹ {t('all_shifts')}
         </button>
-        <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--white)' }}>{shift.name}</div>
+        <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--white)' }}>{tr(shift.name)}</div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
-          {completedCount} of {tasks.length} tasks completed
+          {t('tasks_done', { done: completedCount, total: tasks.length })}
           {locationData && !locationData.onSite && locationData.latitude && (
-            <span style={{ marginLeft: 8, color: '#FFB347' }}>· ⚠️ Off-site</span>
+            <span style={{ marginLeft: 8, color: '#FFB347' }}>· ⚠️ {t('off_site')}</span>
           )}
         </div>
         <div className="progress-bar" style={{ marginTop: 10, background: 'rgba(255,255,255,0.1)' }}>
@@ -181,7 +273,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
         {tasks.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>
-            <div className="empty-state-text">No tasks assigned to this shift yet.</div>
+            <div className="empty-state-text">{t('no_tasks')}</div>
           </div>
         ) : (
           tasks.map(task => {
@@ -200,13 +292,13 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                 >
                   <div className="task-dot" style={{ background: CAT_COLORS[task.category] || '#888' }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className={`task-name ${status}`}>{task.name}</div>
+                    <div className={`task-name ${status}`}>{tr(task.name)}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 5 }}>
                       <span className={`badge badge-${status}`}>
-                        {status === 'pending' ? '○ Pending' : status === 'completed' ? '✓ Done' : '⚑ Flagged'}
+                        {status === 'pending' ? `○ ${t('pending')}` : status === 'completed' ? `✓ ${t('done')}` : `⚑ ${t('flagged')}`}
                       </span>
                       <span className={`badge cat-${task.category}`} style={{ fontSize: 10 }}>
-                        {CAT_LABELS[task.category]}
+                        {t(`cat_${task.category}`)}
                       </span>
                       {refImages.length > 0 && (
                         <span className="badge" style={{
@@ -235,7 +327,7 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                         fontSize: 13, color: 'var(--text-secondary)',
                         lineHeight: 1.5, padding: '4px 0 8px'
                       }}>
-                        {task.description}
+                        {tr(task.description)}
                       </div>
                     )}
 
@@ -248,10 +340,10 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
                     {!comp && (
                       <div className="task-btn-row">
                         <button className="btn btn-success" onClick={() => openModal(task, 'complete')}>
-                          ✓ Complete
+                          ✓ {t('complete')}
                         </button>
                         <button className="btn btn-danger" onClick={() => openModal(task, 'flag')}>
-                          ⚑ Flag Issue
+                          ⚑ {t('flag_issue')}
                         </button>
                       </div>
                     )}
@@ -269,28 +361,28 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
           <div className="modal-sheet">
             <div className="modal-handle" />
             <div className="modal-title">
-              {activeModal.mode === 'flag' ? '⚑ Flag an issue' : '✓ Complete task'}
+              {activeModal.mode === 'flag' ? `⚑ ${t('title_flag')}` : `✓ ${t('title_complete')}`}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.4 }}>
-              {activeModal.task.name}
+              {tr(activeModal.task.name)}
             </div>
 
             <div className="form-group">
               <label className="form-label">
-                {activeModal.mode === 'flag' ? 'Describe the issue' : 'Add a comment (optional)'}
+                {activeModal.mode === 'flag' ? t('describe_issue') : t('add_comment')}
               </label>
               <textarea className="form-input" rows={3}
-                placeholder={activeModal.mode === 'flag' ? 'What is the issue? Where exactly?' : 'Any notes…'}
+                placeholder={activeModal.mode === 'flag' ? t('ph_issue') : t('ph_comment')}
                 value={comment} onChange={e => setComment(e.target.value)} />
             </div>
 
             {activeModal.mode === 'flag' && (
               <div className="form-group">
-                <label className="form-label">Add photos (optional)</label>
+                <label className="form-label">{t('add_photos')}</label>
                 <input type="file" accept="image/*" multiple capture="environment"
                   ref={fileRef} style={{ display: 'none' }} onChange={handleImageAdd} />
                 <div className="image-upload-area" onClick={() => fileRef.current?.click()}>
-                  📷 Tap to take photo or choose from library
+                  📷 {t('photo_tap')}
                 </div>
                 {images.length > 0 && (
                   <div className="image-preview-grid">
@@ -304,13 +396,13 @@ export default function ShiftTasks({ shift, locationData, onBack }) {
 
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
               <button className="btn btn-outline btn-sm" onClick={closeModal} style={{ flex: 1 }}>
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 className={`btn ${activeModal.mode === 'flag' ? 'btn-danger' : 'btn-success'}`}
                 onClick={handleSave} disabled={saving} style={{ flex: 2 }}
               >
-                {saving ? 'Saving…' : activeModal.mode === 'flag' ? 'Submit Issue' : 'Mark Complete'}
+                {saving ? t('saving') : activeModal.mode === 'flag' ? t('submit_issue') : t('mark_complete')}
               </button>
             </div>
           </div>

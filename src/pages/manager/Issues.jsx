@@ -1,16 +1,55 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { useT, useLanguage } from '../../lib/i18n'
+import { TranslatedText, translateText } from '../../lib/translate'
 
-const STATUS_FILTERS = [
-  { value: 'open',        label: 'Open' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'resolved',    label: 'Resolved' },
-  { value: 'all',         label: 'All' },
-]
+const STATUS_FILTERS = ['open', 'in_progress', 'resolved', 'all']
+
+// Issues wording in all five languages. Issue titles (task names) and the
+// descriptions staff typed are translated live.
+const TEXT = {
+  en: { title: 'Issues', open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', all: 'All',
+        none_open: 'No open issues — everything is good!', none: 'No issues found.', issue: 'Issue reported',
+        claimed_by: ' · Claimed by {name}', reported: 'Reported {date}', by: ' by {name}', description: 'Description',
+        photos: 'Photos ({n})', handled_by: 'Being handled by {name}', resolved_on: 'Resolved {date}',
+        updating: 'Updating…', resolving: 'Resolving…', mark_in_progress: 'Mark In Progress', mark_resolved: 'Mark Resolved',
+        reopen: 'Reopen Issue', close: 'Close', toast_resolved: 'Issue resolved ✓', toast_updated: 'Status updated',
+        mins_ago: '{n}m ago', hrs_ago: '{n}h ago', days_ago: '{n}d ago' },
+  fr: { title: 'Problèmes', open: 'Ouverts', in_progress: 'En cours', resolved: 'Résolus', all: 'Tous',
+        none_open: 'Aucun problème en cours — tout va bien !', none: 'Aucun problème trouvé.', issue: 'Problème signalé',
+        claimed_by: ' · Pris en charge par {name}', reported: 'Signalé le {date}', by: ' par {name}', description: 'Description',
+        photos: 'Photos ({n})', handled_by: 'Pris en charge par {name}', resolved_on: 'Résolu le {date}',
+        updating: 'Mise à jour…', resolving: 'Résolution…', mark_in_progress: 'Passer en cours', mark_resolved: 'Marquer comme résolu',
+        reopen: 'Rouvrir le problème', close: 'Fermer', toast_resolved: 'Problème résolu ✓', toast_updated: 'Statut mis à jour',
+        mins_ago: 'il y a {n} min', hrs_ago: 'il y a {n} h', days_ago: 'il y a {n} j' },
+  es: { title: 'Incidencias', open: 'Abiertas', in_progress: 'En curso', resolved: 'Resueltas', all: 'Todas',
+        none_open: 'No hay incidencias abiertas: ¡todo en orden!', none: 'No se han encontrado incidencias.', issue: 'Incidencia informada',
+        claimed_by: ' · Asignada a {name}', reported: 'Informada el {date}', by: ' por {name}', description: 'Descripción',
+        photos: 'Fotos ({n})', handled_by: 'La está gestionando {name}', resolved_on: 'Resuelta el {date}',
+        updating: 'Actualizando…', resolving: 'Resolviendo…', mark_in_progress: 'Marcar en curso', mark_resolved: 'Marcar como resuelta',
+        reopen: 'Reabrir incidencia', close: 'Cerrar', toast_resolved: 'Incidencia resuelta ✓', toast_updated: 'Estado actualizado',
+        mins_ago: 'hace {n} min', hrs_ago: 'hace {n} h', days_ago: 'hace {n} d' },
+  it: { title: 'Problemi', open: 'Aperti', in_progress: 'In corso', resolved: 'Risolti', all: 'Tutti',
+        none_open: 'Nessun problema aperto — tutto a posto!', none: 'Nessun problema trovato.', issue: 'Problema segnalato',
+        claimed_by: ' · Preso in carico da {name}', reported: 'Segnalato il {date}', by: ' da {name}', description: 'Descrizione',
+        photos: 'Foto ({n})', handled_by: 'Se ne sta occupando {name}', resolved_on: 'Risolto il {date}',
+        updating: 'Aggiornamento…', resolving: 'Risoluzione…', mark_in_progress: 'Segna in corso', mark_resolved: 'Segna come risolto',
+        reopen: 'Riapri problema', close: 'Chiudi', toast_resolved: 'Problema risolto ✓', toast_updated: 'Stato aggiornato',
+        mins_ago: '{n} min fa', hrs_ago: '{n} h fa', days_ago: '{n} g fa' },
+  pt: { title: 'Problemas', open: 'Abertos', in_progress: 'Em curso', resolved: 'Resolvidos', all: 'Todos',
+        none_open: 'Sem problemas em aberto — está tudo bem!', none: 'Nenhum problema encontrado.', issue: 'Problema assinalado',
+        claimed_by: ' · A cargo de {name}', reported: 'Assinalado a {date}', by: ' por {name}', description: 'Descrição',
+        photos: 'Fotografias ({n})', handled_by: 'A ser tratado por {name}', resolved_on: 'Resolvido a {date}',
+        updating: 'A atualizar…', resolving: 'A resolver…', mark_in_progress: 'Marcar em curso', mark_resolved: 'Marcar como resolvido',
+        reopen: 'Reabrir problema', close: 'Fechar', toast_resolved: 'Problema resolvido ✓', toast_updated: 'Estado atualizado',
+        mins_ago: 'há {n} min', hrs_ago: 'há {n} h', days_ago: 'há {n} d' },
+}
 
 export default function Issues({ onNavigate }) {
   const { staff, isHQ } = useAuth()
+  const t = useT(TEXT)
+  const { lang, locale } = useLanguage()
   const [issues, setIssues] = useState([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('open')
@@ -24,6 +63,19 @@ export default function Issues({ onNavigate }) {
   const scopedSiteId = staff.active_site_id || staff.site_id
 
   useEffect(() => { loadIssues() }, [filter])
+
+  // Issue titles are task names typed in English — translate for other languages.
+  const [tx, setTx] = useState({})
+  const tr = (x) => (x && tx[x]) || x
+  useEffect(() => {
+    if (lang === 'en') { setTx({}); return }
+    const texts = [...new Set(issues.map(i => i.task_name).filter(x => x && x.trim()))]
+    if (texts.length === 0) return
+    let alive = true
+    Promise.all(texts.map(x => translateText(x, lang).then(r => [x, r?.text])))
+      .then(pairs => { if (alive) setTx(Object.fromEntries(pairs.filter(([, v]) => v))) })
+    return () => { alive = false }
+  }, [lang, issues])
 
   // === REALTIME SYNC (the fix for the dashboard duplication bug) ===
   // When any admin updates an issue at this site, every admin's
@@ -53,7 +105,7 @@ export default function Issues({ onNavigate }) {
       .from('issues')
       .select(`
         *,
-        reporter:staff_id ( first_name, last_name ),
+        reporter:staff_id ( first_name, last_name, language ),
         sites:site_id ( name ),
         resolver:resolved_by ( first_name, last_name ),
         claimer:claimed_by ( first_name, last_name )
@@ -91,7 +143,7 @@ export default function Issues({ onNavigate }) {
     const { error } = await supabase.from('issues').update(update).eq('id', selectedIssue.id)
     if (!error) {
       setSelectedIssue(prev => ({ ...prev, ...update }))
-      showToast(newStatus === 'resolved' ? 'Issue resolved ✓' : 'Status updated')
+      showToast(newStatus === 'resolved' ? t('toast_resolved') : t('toast_updated'))
       // No need to manually call loadIssues — the realtime subscription
       // above will pick this up and refresh, including for other admins
       // logged in at this site.
@@ -107,13 +159,13 @@ export default function Issues({ onNavigate }) {
   const timeAgo = (ts) => {
     const diff = Date.now() - new Date(ts).getTime()
     const mins = Math.floor(diff / 60000)
-    if (mins < 60) return `${mins}m ago`
+    if (mins < 60) return t('mins_ago', { n: mins })
     const hrs = Math.floor(mins / 60)
-    if (hrs < 24) return `${hrs}h ago`
-    return `${Math.floor(hrs / 24)}d ago`
+    if (hrs < 24) return t('hrs_ago', { n: hrs })
+    return t('days_ago', { n: Math.floor(hrs / 24) })
   }
 
-  const formatDate = (ts) => new Date(ts).toLocaleDateString('en-GB', {
+  const formatDate = (ts) => new Date(ts).toLocaleDateString(locale, {
     day: 'numeric', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
   })
@@ -129,9 +181,9 @@ export default function Issues({ onNavigate }) {
 
         {/* Fixed header */}
         <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '14px 16px 0', flexShrink: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--navy)', marginBottom: 10 }}>Issues</div>
+          <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--navy)', marginBottom: 10 }}>{t('title')}</div>
           <div style={{ display: 'flex', gap: 6, paddingBottom: 12 }}>
-            {STATUS_FILTERS.map(f => (
+            {STATUS_FILTERS.map(v => ({ value: v, label: t(v) })).map(f => (
               <button key={f.value} onClick={() => setFilter(f.value)} style={{
                 padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700,
                 cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0,
@@ -149,7 +201,7 @@ export default function Issues({ onNavigate }) {
             <div className="empty-state">
               <div className="empty-state-icon">{filter === 'open' ? '✓' : '📋'}</div>
               <div className="empty-state-text">
-                {filter === 'open' ? 'No open issues — everything is good!' : 'No issues found.'}
+                {filter === 'open' ? t('none_open') : t('none')}
               </div>
             </div>
           ) : (
@@ -167,11 +219,11 @@ export default function Issues({ onNavigate }) {
                 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>
-                    {issue.task_name || 'Issue reported'}
+                    {tr(issue.task_name) || t('issue')}
                   </div>
                   {issue.description && (
                     <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>
-                      {issue.description}
+                      <TranslatedText text={issue.description} authorLang={issue.reporter?.language} compact />
                     </div>
                   )}
                   <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 5 }}>
@@ -179,13 +231,12 @@ export default function Issues({ onNavigate }) {
                     {isHQ() && issue.sites && ` · ${issue.sites.name}`}
                     {' · '}{timeAgo(issue.created_at)}
                     {issue.claimer && issue.status === 'in_progress' &&
-                      ` · Claimed by ${issue.claimer.first_name}`}
+                      t('claimed_by', { name: issue.claimer.first_name })}
                   </div>
                 </div>
                 <div>
                   <span className={`badge badge-${issue.status}`}>
-                    {issue.status === 'in_progress' ? 'In Progress'
-                      : issue.status.charAt(0).toUpperCase() + issue.status.slice(1)}
+                    {t(issue.status)}
                   </span>
                   <div style={{ fontSize: 18, color: 'var(--text-light)', textAlign: 'center', marginTop: 6 }}>›</div>
                 </div>
@@ -204,7 +255,7 @@ export default function Issues({ onNavigate }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
               <div style={{ flex: 1, paddingRight: 12 }}>
                 <div style={{ fontWeight: 800, fontSize: 17, color: 'var(--navy)', lineHeight: 1.3 }}>
-                  {selectedIssue.task_name || 'Issue reported'}
+                  {tr(selectedIssue.task_name) || t('issue')}
                 </div>
               </div>
               <span style={{
@@ -213,22 +264,21 @@ export default function Issues({ onNavigate }) {
                 color: statusColor[selectedIssue.status] || '#888',
                 flexShrink: 0
               }}>
-                {selectedIssue.status === 'in_progress' ? 'In Progress'
-                  : selectedIssue.status.charAt(0).toUpperCase() + selectedIssue.status.slice(1)}
+                {t(selectedIssue.status)}
               </span>
             </div>
 
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 16 }}>
-              Reported {formatDate(selectedIssue.created_at)}
-              {selectedIssue.reporter && ` by ${selectedIssue.reporter.first_name} ${selectedIssue.reporter.last_name}`}
+              {t('reported', { date: formatDate(selectedIssue.created_at) })}
+              {selectedIssue.reporter && t('by', { name: `${selectedIssue.reporter.first_name} ${selectedIssue.reporter.last_name}` })}
               {isHQ() && selectedIssue.sites && ` · ${selectedIssue.sites.name}`}
             </div>
 
             {selectedIssue.description && (
               <div style={{ background: 'var(--off-white)', borderRadius: 'var(--radius-md)', padding: 14, marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{t('description')}</div>
                 <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  {selectedIssue.description}
+                  <TranslatedText text={selectedIssue.description} authorLang={selectedIssue.reporter?.language} />
                 </div>
               </div>
             )}
@@ -236,7 +286,7 @@ export default function Issues({ onNavigate }) {
             {issueImages.length > 0 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  Photos ({issueImages.length})
+                  {t('photos', { n: issueImages.length })}
                 </div>
                 <div className="image-preview-grid">
                   {issueImages.map(img => (
@@ -251,7 +301,7 @@ export default function Issues({ onNavigate }) {
             {selectedIssue.status === 'in_progress' && selectedIssue.claimer && (
               <div style={{ background: 'var(--warning-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 600 }}>
-                  🔧 Being handled by {selectedIssue.claimer.first_name} {selectedIssue.claimer.last_name}
+                  🔧 {t('handled_by', { name: `${selectedIssue.claimer.first_name} ${selectedIssue.claimer.last_name}` })}
                 </div>
               </div>
             )}
@@ -259,8 +309,8 @@ export default function Issues({ onNavigate }) {
             {selectedIssue.status === 'resolved' && selectedIssue.resolved_at && (
               <div style={{ background: 'var(--success-bg)', borderRadius: 'var(--radius-md)', padding: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-                  ✓ Resolved {formatDate(selectedIssue.resolved_at)}
-                  {selectedIssue.resolver && ` by ${selectedIssue.resolver.first_name} ${selectedIssue.resolver.last_name}`}
+                  ✓ {t('resolved_on', { date: formatDate(selectedIssue.resolved_at) })}
+                  {selectedIssue.resolver && t('by', { name: `${selectedIssue.resolver.first_name} ${selectedIssue.resolver.last_name}` })}
                 </div>
               </div>
             )}
@@ -271,21 +321,21 @@ export default function Issues({ onNavigate }) {
                   background: 'var(--warning-bg)', color: 'var(--warning)',
                   border: '1px solid rgba(232,144,26,0.2)'
                 }}>
-                  {updatingStatus ? 'Updating…' : '🔧 Mark In Progress'}
+                  {updatingStatus ? t('updating') : `🔧 ${t('mark_in_progress')}`}
                 </button>
               )}
               {selectedIssue.status !== 'resolved' && (
                 <button className="btn btn-success" onClick={() => updateStatus('resolved')} disabled={updatingStatus}>
-                  {updatingStatus ? 'Resolving…' : '✓ Mark Resolved'}
+                  {updatingStatus ? t('resolving') : `✓ ${t('mark_resolved')}`}
                 </button>
               )}
               {selectedIssue.status === 'resolved' && (
                 <button className="btn btn-outline" onClick={() => updateStatus('open')} disabled={updatingStatus}>
-                  Reopen Issue
+                  {t('reopen')}
                 </button>
               )}
               <button className="btn btn-outline" onClick={() => setSelectedIssue(null)}>
-                Close
+                {t('close')}
               </button>
             </div>
           </div>

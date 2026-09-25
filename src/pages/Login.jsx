@@ -2,9 +2,127 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { VALID_PIN_LENGTHS } from '../lib/permissions'
+import { useT, LanguagePicker } from '../lib/i18n'
+
+// Login wording in all five languages. The flag button (top right) lets
+// someone switch language before logging in; this device remembers it.
+// Tone: FR vous · ES tú · IT tu · PT formal (o seu).
+const TEXT = {
+  en: {
+    select_site: 'Select your site',
+    enter_pin: 'Enter your PIN',
+    wrong_pin: 'Incorrect PIN — try again',
+    pin_length: 'PIN must be {lengths} digits',
+    checking: "Checking you're at the gym…",
+    cant_login: "Can't log in here",
+    blocked_denied: 'Location is off. Turn on location for this site and try again — you need to be at the gym to log in.',
+    blocked_nogeo: "This device can't share its location, so we can't confirm you're at the gym.",
+    blocked_distance: 'You appear to be about {m}m away. You need to be at the gym to log in.',
+    blocked_generic: "We couldn't confirm you're at the gym.",
+    try_again: 'Try again',
+    manager_override: 'Manager override',
+    start_over: 'Start over',
+    override_prompt: 'Manager override — enter a manager PIN to allow this login',
+    not_manager_pin: 'Not a manager PIN',
+    login_failed: 'Login failed — try again',
+    manager_pin_length: 'Manager PIN is 6 or 8 digits',
+    authorise: 'Authorise',
+    enter: 'Enter',
+    back: 'Back',
+  },
+  fr: {
+    select_site: 'Choisissez votre site',
+    enter_pin: 'Saisissez votre code PIN',
+    wrong_pin: 'Code PIN incorrect — réessayez',
+    pin_length: 'Le code PIN doit comporter {lengths} chiffres',
+    checking: 'Vérification de votre présence à la salle…',
+    cant_login: 'Connexion impossible ici',
+    blocked_denied: 'La localisation est désactivée. Activez-la pour ce site et réessayez — vous devez être à la salle pour vous connecter.',
+    blocked_nogeo: 'Cet appareil ne peut pas partager sa position, nous ne pouvons donc pas confirmer que vous êtes à la salle.',
+    blocked_distance: 'Vous semblez être à environ {m} m. Vous devez être à la salle pour vous connecter.',
+    blocked_generic: "Nous n'avons pas pu confirmer que vous êtes à la salle.",
+    try_again: 'Réessayer',
+    manager_override: 'Autorisation du responsable',
+    start_over: 'Recommencer',
+    override_prompt: 'Autorisation du responsable — saisissez un code PIN responsable pour autoriser cette connexion',
+    not_manager_pin: "Ce n'est pas un code PIN responsable",
+    login_failed: 'Échec de la connexion — réessayez',
+    manager_pin_length: 'Le code PIN responsable comporte 6 ou 8 chiffres',
+    authorise: 'Autoriser',
+    enter: 'Valider',
+    back: 'Retour',
+  },
+  es: {
+    select_site: 'Elige tu sede',
+    enter_pin: 'Introduce tu PIN',
+    wrong_pin: 'PIN incorrecto: inténtalo de nuevo',
+    pin_length: 'El PIN debe tener {lengths} dígitos',
+    checking: 'Comprobando que estás en el gimnasio…',
+    cant_login: 'No puedes iniciar sesión aquí',
+    blocked_denied: 'La ubicación está desactivada. Actívala para este sitio y vuelve a intentarlo: tienes que estar en el gimnasio para iniciar sesión.',
+    blocked_nogeo: 'Este dispositivo no puede compartir su ubicación, así que no podemos confirmar que estás en el gimnasio.',
+    blocked_distance: 'Parece que estás a unos {m} m. Tienes que estar en el gimnasio para iniciar sesión.',
+    blocked_generic: 'No hemos podido confirmar que estés en el gimnasio.',
+    try_again: 'Reintentar',
+    manager_override: 'Autorización del gerente',
+    start_over: 'Empezar de nuevo',
+    override_prompt: 'Autorización del gerente: introduce un PIN de gerente para permitir este acceso',
+    not_manager_pin: 'No es un PIN de gerente',
+    login_failed: 'Error al iniciar sesión: inténtalo de nuevo',
+    manager_pin_length: 'El PIN de gerente tiene 6 u 8 dígitos',
+    authorise: 'Autorizar',
+    enter: 'Entrar',
+    back: 'Atrás',
+  },
+  it: {
+    select_site: 'Seleziona la tua sede',
+    enter_pin: 'Inserisci il tuo PIN',
+    wrong_pin: 'PIN errato — riprova',
+    pin_length: 'Il PIN deve avere {lengths} cifre',
+    checking: 'Verifica che tu sia in palestra…',
+    cant_login: 'Impossibile accedere da qui',
+    blocked_denied: 'La posizione è disattivata. Attivala per questo sito e riprova: devi essere in palestra per accedere.',
+    blocked_nogeo: 'Questo dispositivo non può condividere la posizione, quindi non possiamo confermare che tu sia in palestra.',
+    blocked_distance: 'Sembri essere a circa {m} m. Devi essere in palestra per accedere.',
+    blocked_generic: 'Non siamo riusciti a confermare che tu sia in palestra.',
+    try_again: 'Riprova',
+    manager_override: 'Autorizzazione del responsabile',
+    start_over: 'Ricomincia',
+    override_prompt: "Autorizzazione del responsabile — inserisci un PIN da responsabile per consentire l'accesso",
+    not_manager_pin: 'Non è un PIN da responsabile',
+    login_failed: 'Accesso non riuscito — riprova',
+    manager_pin_length: 'Il PIN da responsabile ha 6 o 8 cifre',
+    authorise: 'Autorizza',
+    enter: 'Accedi',
+    back: 'Indietro',
+  },
+  pt: {
+    select_site: 'Selecione a sua unidade',
+    enter_pin: 'Introduza o seu PIN',
+    wrong_pin: 'PIN incorreto — tente novamente',
+    pin_length: 'O PIN deve ter {lengths} dígitos',
+    checking: 'A verificar se está no ginásio…',
+    cant_login: 'Não é possível iniciar sessão aqui',
+    blocked_denied: 'A localização está desativada. Ative-a para este site e tente novamente — tem de estar no ginásio para iniciar sessão.',
+    blocked_nogeo: 'Este dispositivo não consegue partilhar a localização, por isso não podemos confirmar que está no ginásio.',
+    blocked_distance: 'Parece estar a cerca de {m} m. Tem de estar no ginásio para iniciar sessão.',
+    blocked_generic: 'Não foi possível confirmar que está no ginásio.',
+    try_again: 'Tentar novamente',
+    manager_override: 'Autorização do gestor',
+    start_over: 'Recomeçar',
+    override_prompt: 'Autorização do gestor — introduza um PIN de gestor para permitir este início de sessão',
+    not_manager_pin: 'Não é um PIN de gestor',
+    login_failed: 'Falha no início de sessão — tente novamente',
+    manager_pin_length: 'O PIN de gestor tem 6 ou 8 dígitos',
+    authorise: 'Autorizar',
+    enter: 'Entrar',
+    back: 'Voltar',
+  },
+}
 
 export default function Login() {
   const { loginWithPin, verifyManagerPin } = useAuth()
+  const t = useT(TEXT)
   const [step, setStep] = useState('site')
   const [sites, setSites] = useState([])
   const [selectedSite, setSelectedSite] = useState(null)
@@ -60,7 +178,7 @@ export default function Login() {
     if (candidate.length >= 8) {
       setShake(true)
       setTimeout(() => { setShake(false); setPin(''); lastAttemptRef.current = '' }, 600)
-      setError('Incorrect PIN — try again')
+      setError('wrong_pin')
     }
   }
 
@@ -86,11 +204,11 @@ export default function Login() {
   const submitOverride = async (mgrPin) => {
     setLoading(true)
     const ok = await verifyManagerPin(mgrPin, selectedSite.id)
-    if (!ok) { setLoading(false); setOverrideError('Not a manager PIN'); setOverridePin(''); return }
+    if (!ok) { setLoading(false); setOverrideError('not_manager_pin'); setOverridePin(''); return }
     lastAttemptRef.current = ''
     const result = await loginWithPin(blocked.pin, selectedSite.id, { override: true })
     setLoading(false)
-    if (!result.success) { setOverrideError('Login failed — try again'); setOverridePin('') }
+    if (!result.success) { setOverrideError('login_failed'); setOverridePin('') }
     // success → AuthProvider sets staff and the app switches view
   }
 
@@ -128,12 +246,12 @@ export default function Login() {
     if (loading) return
     if (overrideMode) {
       if (overridePin.length === 6 || overridePin.length === 8) await submitOverride(overridePin)
-      else setOverrideError('Manager PIN is 6 or 8 digits')
+      else setOverrideError('manager_pin_length')
       return
     }
     if (pin.length === 0) return
     if (!VALID_PIN_LENGTHS.includes(pin.length)) {
-      setError(`PIN must be ${VALID_PIN_LENGTHS.join(', ')} digits`); return
+      setError('pin_length'); return
     }
     lastAttemptRef.current = ''
     await attemptLogin(pin)
@@ -163,10 +281,10 @@ export default function Login() {
 
   const blockedMessage = () => {
     if (!blocked) return ''
-    if (blocked.denied) return 'Location is off. Turn on location for this site and try again — you need to be at the gym to log in.'
-    if (blocked.noGeo)  return "This device can't share its location, so we can't confirm you're at the gym."
-    if (blocked.distance != null) return `You appear to be about ${blocked.distance}m away. You need to be at the gym to log in.`
-    return "We couldn't confirm you're at the gym."
+    if (blocked.denied) return t('blocked_denied')
+    if (blocked.noGeo)  return t('blocked_nogeo')
+    if (blocked.distance != null) return t('blocked_distance', { m: blocked.distance })
+    return t('blocked_generic')
   }
 
   return (
@@ -175,6 +293,11 @@ export default function Login() {
       flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       padding: '24px', gap: '36px', position: 'relative'
     }}>
+
+      {/* Language — before anyone has logged in */}
+      <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
+        <LanguagePicker />
+      </div>
 
       {/* Brand */}
       <div style={{ textAlign: 'center' }}>
@@ -193,7 +316,7 @@ export default function Login() {
       {step === 'site' && (
         <div style={{ width: '100%', maxWidth: '300px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div style={{ textAlign: 'center', fontSize: '13px', color: 'rgba(255,255,255,0.4)', fontWeight: '500', marginBottom: 4 }}>
-            Select your site
+            {t('select_site')}
           </div>
           {sitesLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>
@@ -229,33 +352,33 @@ export default function Login() {
           {locating ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
               <div className="spinner" />
-              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>Checking you're at the gym…</div>
+              <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.6)', fontWeight: 500 }}>{t('checking')}</div>
             </div>
           ) : blocked && !overrideMode ? (
             <div style={{ width: '100%', maxWidth: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, textAlign: 'center' }}>
               <div style={{ fontSize: 40 }}>📍</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#FF8080' }}>Can't log in here</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#FF8080' }}>{t('cant_login')}</div>
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5 }}>{blockedMessage()}</div>
               <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
                 <button onClick={() => { const p = blocked.pin; setBlocked(null); requestLocation(p) }} style={{
                   padding: '13px', borderRadius: 12, background: 'var(--aqua)', color: 'var(--navy)',
                   border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                }}>Try again</button>
+                }}>{t('try_again')}</button>
                 <button onClick={() => { setOverrideMode(true); setOverridePin(''); setOverrideError('') }} style={{
                   padding: '13px', borderRadius: 12, background: 'rgba(127,192,195,0.12)', color: 'var(--white)',
                   border: '1.5px solid rgba(127,192,195,0.25)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                }}>Manager override</button>
+                }}>{t('manager_override')}</button>
                 <button onClick={resetPinState} style={{
                   padding: '10px', background: 'none', color: 'rgba(255,255,255,0.4)',
                   border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>Start over</button>
+                }}>{t('start_over')}</button>
               </div>
             </div>
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
                 <div style={{ fontSize: '13px', color: overrideMode ? 'var(--aqua)' : 'rgba(255,255,255,0.4)', fontWeight: overrideMode ? 700 : 500, textAlign: 'center' }}>
-                  {overrideMode ? 'Manager override — enter a manager PIN to allow this login' : 'Enter your PIN'}
+                  {overrideMode ? t('override_prompt') : t('enter_pin')}
                 </div>
                 {/* Fixed-height row so growing from 4 to 6 to 8 dots never
                     moves the keypad below it. */}
@@ -277,7 +400,7 @@ export default function Login() {
                 <div style={{
                   fontSize: '13px', color: '#FF8080', fontWeight: '500',
                   minHeight: '17px', lineHeight: '17px', textAlign: 'center',
-                }}>{(overrideMode ? overrideError : error) || '\u00a0'}</div>
+                }}>{(overrideMode ? (overrideError && t(overrideError)) : (error && t(error, { lengths: VALID_PIN_LENGTHS.join(', ') }))) || '\u00a0'}</div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', width: '100%', maxWidth: '280px' }}>
@@ -319,14 +442,14 @@ export default function Login() {
                     transition: 'all 0.15s',
                   }}
                 >
-                  {loading ? '···' : overrideMode ? 'Authorise' : 'Enter'}
+                  {loading ? '···' : overrideMode ? t('authorise') : t('enter')}
               </button>
 
               {overrideMode && (
                 <button onClick={() => { setOverrideMode(false); setOverridePin(''); setOverrideError('') }} style={{
                   background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
                   fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}>‹ Back</button>
+                }}>‹ {t('back')}</button>
               )}
             </>
           )}

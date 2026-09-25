@@ -2,6 +2,69 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import NotesPanel from '../notes/NotesPanel'
+import { useT, useLanguage } from '../../lib/i18n'
+import { translateText } from '../../lib/translate'
+
+// Shift selector wording in all five languages.
+// Shift NAMES (e.g. "Early Morning") are set by managers, so they stay as
+// typed for now — they'll be covered in the later task-content batch.
+const TEXT = {
+  en: {
+    good_morning: 'Good morning', good_afternoon: 'Good afternoon', good_evening: 'Good evening',
+    weekend: 'Weekend',
+    on_site: 'On site · {m}m from {site}',
+    off_site: 'Not on site · {m}m away',
+    off_site_note: 'You can still complete tasks but your location will be logged.',
+    select_shift: 'Select your shift',
+    no_shifts: 'No shifts scheduled for today.', contact_manager: 'Contact your manager.',
+    tasks_done: '{done} of {total} tasks completed',
+    no_tasks: 'No tasks assigned',
+  },
+  fr: {
+    good_morning: 'Bonjour', good_afternoon: 'Bon après-midi', good_evening: 'Bonsoir',
+    weekend: 'Week-end',
+    on_site: 'Sur place · à {m} m de {site}',
+    off_site: 'Pas sur place · à {m} m',
+    off_site_note: 'Vous pouvez quand même effectuer les tâches, mais votre position sera enregistrée.',
+    select_shift: 'Choisissez votre service',
+    no_shifts: "Aucun service prévu aujourd'hui.", contact_manager: 'Contactez votre responsable.',
+    tasks_done: '{done} sur {total} tâches effectuées',
+    no_tasks: 'Aucune tâche attribuée',
+  },
+  es: {
+    good_morning: 'Buenos días', good_afternoon: 'Buenas tardes', good_evening: 'Buenas tardes',
+    weekend: 'Fin de semana',
+    on_site: 'En el centro · a {m} m de {site}',
+    off_site: 'Fuera del centro · a {m} m',
+    off_site_note: 'Puedes completar las tareas, pero se registrará tu ubicación.',
+    select_shift: 'Elige tu turno',
+    no_shifts: 'No hay turnos programados para hoy.', contact_manager: 'Contacta con tu gerente.',
+    tasks_done: '{done} de {total} tareas completadas',
+    no_tasks: 'Sin tareas asignadas',
+  },
+  it: {
+    good_morning: 'Buongiorno', good_afternoon: 'Buon pomeriggio', good_evening: 'Buonasera',
+    weekend: 'Weekend',
+    on_site: 'In sede · a {m} m da {site}',
+    off_site: 'Non in sede · a {m} m',
+    off_site_note: 'Puoi comunque completare i compiti, ma la tua posizione verrà registrata.',
+    select_shift: 'Seleziona il tuo turno',
+    no_shifts: 'Nessun turno previsto per oggi.', contact_manager: 'Contatta il tuo responsabile.',
+    tasks_done: '{done} di {total} compiti completati',
+    no_tasks: 'Nessun compito assegnato',
+  },
+  pt: {
+    good_morning: 'Bom dia', good_afternoon: 'Boa tarde', good_evening: 'Boa noite',
+    weekend: 'Fim de semana',
+    on_site: 'No local · a {m} m de {site}',
+    off_site: 'Fora do local · a {m} m',
+    off_site_note: 'Pode concluir as tarefas na mesma, mas a sua localização será registada.',
+    select_shift: 'Selecione o seu turno',
+    no_shifts: 'Não há turnos agendados para hoje.', contact_manager: 'Contacte o seu gestor.',
+    tasks_done: '{done} de {total} tarefas concluídas',
+    no_tasks: 'Nenhuma tarefa atribuída',
+  },
+}
 
 const SHIFT_ICONS = {
   'Early Morning': '🌅', 'Mid Shift': '☀️', 'Evening': '🌆', 'Overnight': '🌙',
@@ -23,6 +86,8 @@ function getDistanceMetres(lat1, lon1, lat2, lon2) {
 
 export default function ShiftSelector({ onSelectShift }) {
   const { staff } = useAuth()
+  const t = useT(TEXT)
+  const { lang, locale } = useLanguage()
   const [shifts, setShifts]                 = useState([])
   const [completions, setCompletions]       = useState({})
   const [taskCounts, setTaskCounts]         = useState({})
@@ -38,12 +103,25 @@ export default function ShiftSelector({ onSelectShift }) {
 
   const greeting = () => {
     const h = new Date().getHours()
-    if (h < 12) return 'Good morning'
-    if (h < 17) return 'Good afternoon'
-    return 'Good evening'
+    if (h < 12) return t('good_morning')
+    if (h < 17) return t('good_afternoon')
+    return t('good_evening')
   }
 
   useEffect(() => { loadData() }, [])
+
+  // Shift names are typed by managers in English — translate them for other
+  // languages (DeepL, remembered). The shift itself is unchanged.
+  const [tx, setTx] = useState({})
+  useEffect(() => {
+    if (lang === 'en') { setTx({}); return }
+    const names = [...new Set(shifts.map(x => x.name).filter(Boolean))]
+    if (names.length === 0) return
+    let alive = true
+    Promise.all(names.map(n => translateText(n, lang).then(r => [n, r?.text])))
+      .then(pairs => { if (alive) setTx(Object.fromEntries(pairs.filter(([, v]) => v))) })
+    return () => { alive = false }
+  }, [lang, shifts])
   useEffect(() => { if (siteData) checkLocation() }, [siteData])
 
   const loadData = async () => {
@@ -113,10 +191,11 @@ export default function ShiftSelector({ onSelectShift }) {
     )
   }
 
-  const formatTime = (t) => {
-    const [h, m] = t.split(':')
+  const formatTime = (time) => {
+    const [h, m] = time.split(':')
     const hour = parseInt(h)
     const ampm = hour < 12 ? 'am' : 'pm'
+    if (lang !== 'en') return `${String(hour).padStart(2, '0')}:${m}`   // 24-hour on the continent
     const display = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour
     return `${display}:${m}${ampm}`
   }
@@ -144,8 +223,8 @@ export default function ShiftSelector({ onSelectShift }) {
           {greeting()}, {staff.first_name}.
         </div>
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 4, fontWeight: 500 }}>
-          {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-          {isWeekend && <span style={{ marginLeft: 8, color: 'var(--aqua)', fontWeight: 700 }}>Weekend</span>}
+          {new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })}
+          {isWeekend && <span style={{ marginLeft: 8, color: 'var(--aqua)', fontWeight: 700 }}>{t('weekend')}</span>}
         </div>
       </div>
 
@@ -158,7 +237,7 @@ export default function ShiftSelector({ onSelectShift }) {
         <div style={{ background: 'var(--success-bg)', border: '1px solid rgba(61,170,110,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>📍</span>
           <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-            On site · {distance}m from {siteData?.name}
+            {t('on_site', { m: distance, site: siteData?.name || '' })}
           </span>
         </div>
       )}
@@ -166,20 +245,20 @@ export default function ShiftSelector({ onSelectShift }) {
         <div style={{ background: 'var(--warning-bg)', border: '1px solid rgba(232,144,26,0.2)', borderRadius: 'var(--radius-md)', padding: '10px 14px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⚠️</span>
-            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>Not on site · {distance}m away</span>
+            <span style={{ fontSize: 13, color: 'var(--warning)', fontWeight: 700 }}>{t('off_site', { m: distance })}</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--warning)', marginTop: 4, marginLeft: 24 }}>
-            You can still complete tasks but your location will be logged.
+            {t('off_site_note')}
           </div>
         </div>
       )}
 
-      <div className="section-heading">Select your shift</div>
+      <div className="section-heading">{t('select_shift')}</div>
 
       {shifts.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">📋</div>
-          <div className="empty-state-text">No shifts scheduled for today.<br/>Contact your manager.</div>
+          <div className="empty-state-text">{t('no_shifts')}<br/>{t('contact_manager')}</div>
         </div>
       ) : (
         shifts.map(shift => {
@@ -197,7 +276,7 @@ export default function ShiftSelector({ onSelectShift }) {
                   {SHIFT_ICONS[shift.name] || '🕐'}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{shift.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--navy)' }}>{tx[shift.name] || shift.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
                     {formatTime(shift.start_time)} – {formatTime(shift.end_time)}
                   </div>
@@ -207,11 +286,11 @@ export default function ShiftSelector({ onSelectShift }) {
                         <div className="progress-fill" style={{ width: `${pct}%` }} />
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 3 }}>
-                        {done} of {total} tasks completed
+                        {t('tasks_done', { done, total })}
                       </div>
                     </>
                   ) : (
-                    <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>No tasks assigned</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 4 }}>{t('no_tasks')}</div>
                   )}
                 </div>
               </div>
