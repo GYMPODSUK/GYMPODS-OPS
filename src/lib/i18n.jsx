@@ -121,7 +121,8 @@ export function LanguagePicker({ tone = 'dark' }) {
         color: tone === 'dark' ? 'var(--white)' : 'var(--navy)',
         border: `1px solid ${tone === 'dark' ? 'rgba(255,255,255,0.18)' : 'var(--border)'}`,
       }}>
-        <span style={{ fontSize: 15 }}>{current.flag}</span>{current.short}
+        {/* Globe, not flag: Windows can't draw flag emojis (it shows "FR FR"). */}
+        <span style={{ fontSize: 14 }}>🌐</span>{current.short}
       </button>
 
       {open && (
